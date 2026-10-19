@@ -1,0 +1,4 @@
+const API=(import.meta.env.VITE_API_URL||"http://localhost:5000/api").replace(/\/$/,"");
+export const token=()=>localStorage.getItem("tie_token")||"";
+export async function api(path,options={}){const headers={...(options.body?{"Content-Type":"application/json"}:{}),...(options.headers||{})};const t=options.token||token()||sessionStorage.getItem("tie_admin")||"";if(options.auth!==false&&t)headers.Authorization=`Bearer ${t}`;const r=await fetch(API+path,{...options,headers});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||"Request failed");return d;}
+export const fileData=file=>new Promise((resolve,reject)=>{if(file.size>5*1024*1024)return reject(new Error("Image max size is 5 MB."));const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error("Could not read file"));r.readAsDataURL(file);});
