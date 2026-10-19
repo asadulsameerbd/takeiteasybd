@@ -18,6 +18,8 @@ import {
   Search,
   LogOut,
   UserRound,
+  Pencil,
+  Image as ImageIcon,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { api, fileData } from "./api";
@@ -25,7 +27,6 @@ import { useAuth } from "./context/AuthContext";
 import logo from "./assets/logo.jpeg";
 import logobgl from "./assets/logobgl.png";
 
-// ✅ সঠিক নিয়মে পেমেন্ট গেটওয়ে ইমেজ ইমপোর্ট
 import bkashLogo from "./assets/bkash.png";
 import nagadLogo from "./assets/nagad.svg";
 import rocketLogo from "./assets/rocket.webp";
@@ -221,9 +222,7 @@ function Footer() {
   return (
     <footer className="w-full bg-[#111111] text-white">
       <div className="mx-auto w-full max-w-[1380px] px-5 py-10 sm:px-8 lg:px-10">
-        {/* ROW 1: Brand on Left, Navigation on Right */}
         <div className="flex w-full flex-col gap-8 md:flex-row md:items-center md:justify-between md:gap-6">
-          {/* Left Container: Logo and Details */}
           <div className="flex min-w-0 flex-col items-start md:flex-1">
             <Link
               to="/"
@@ -242,7 +241,6 @@ function Footer() {
             </p>
           </div>
 
-          {/* Right Container: Page Links (Mobile e sundor vabe bosbe) */}
           <nav
             aria-label="Footer navigation"
             className="flex flex-col items-start gap-4 text-sm font-medium sm:flex-row sm:items-center sm:gap-8 md:shrink-0"
@@ -270,14 +268,11 @@ function Footer() {
           </nav>
         </div>
 
-        {/* ROW 2: Developer Credit on Left, Copyright on Right */}
         <div className="mt-10 flex w-full flex-col-reverse items-start justify-between gap-6 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:gap-4">
-          {/* Copyright Text */}
           <small className="m-0 text-xs leading-5 text-white/60 sm:text-sm">
             © {new Date().getFullYear()} Take It Easy. All rights reserved.
           </small>
 
-          {/* Developer Credit */}
           <div className="m-0 text-xs leading-5 text-white/60 sm:text-sm">
             Built by{" "}
             <a
@@ -317,7 +312,6 @@ function Card({ p, add }) {
 
   return (
     <article className="group relative flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-stone-200/80 bg-white shadow-sm transition-all duration-300 hover:border-stone-300 hover:shadow-lg sm:rounded-2xl sm:hover:-translate-y-1 sm:hover:shadow-xl">
-      {/* Product Image */}
       <Link
         to={`/product/${p.slug}`}
         className="relative block aspect-[4/5] overflow-hidden bg-stone-100"
@@ -334,20 +328,17 @@ function Card({ p, add }) {
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
 
-        {/* Discount Badge */}
         {hasSale && (
           <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-orange-600 px-2 py-1 text-[9px] font-extrabold leading-tight text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px] sm:tracking-wide">
             Sale · {discount}% off
           </span>
         )}
 
-        {/* Desktop Quick View Icon */}
         <span className="absolute bottom-3 right-3 hidden h-10 w-10 translate-y-2 place-items-center rounded-full bg-white text-stone-900 opacity-0 shadow-lg transition-all duration-300 sm:grid sm:group-hover:translate-y-0 sm:group-hover:opacity-100">
           <ArrowUpRight size={19} aria-hidden="true" />
         </span>
       </Link>
 
-      {/* Product Details */}
       <div className="flex flex-1 flex-col p-2.5 sm:p-4 lg:p-5">
         {p.category && (
           <p className="mb-1.5 truncate text-[9px] font-bold uppercase tracking-wider text-stone-500 sm:mb-2 sm:text-[10px] sm:tracking-[0.16em]">
@@ -362,7 +353,6 @@ function Card({ p, add }) {
           {p.title}
         </Link>
 
-        {/* Price */}
         <div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1 sm:mt-3 sm:gap-x-2">
           <strong className="text-base font-extrabold leading-tight tracking-tight text-stone-950 sm:text-lg">
             {money(p.price)}
@@ -374,8 +364,6 @@ function Card({ p, add }) {
             </del>
           )}
         </div>
-
-        {/* Add to Cart */}
 
         <button
           type="button"
@@ -646,13 +634,11 @@ function Products() {
     q.trim() !== "";
 
   return (
-    // ✅ style={{ backgroundColor: "#faf9f6" }} diye background fix kora hoyeche
     <main
       className="min-h-screen w-full text-neutral-900"
       style={{ backgroundColor: "#faf9f6" }}
     >
       <div className="mx-auto w-full max-w-[1380px] px-4 py-6 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
-        {/* Header Title */}
         <div className="mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:flex-row sm:items-end">
           <div>
             <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.22em] text-orange-600 sm:text-xs">
@@ -673,7 +659,6 @@ function Products() {
           </div>
         </div>
 
-        {/* Search & Sort */}
         <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:p-4">
           <div className="flex min-h-12 min-w-0 flex-1 items-center gap-3 rounded-xl bg-neutral-50 px-4 transition focus-within:ring-2 focus-within:ring-orange-400">
             <Search size={19} className="shrink-0 text-neutral-400" />
@@ -745,9 +730,7 @@ function Products() {
           </div>
         </div>
 
-        {/* Main Layout: Sidebar + Products */}
         <div className="flex flex-col items-start gap-6 lg:flex-row lg:gap-8">
-          {/* Filter Sidebar (Desktop) - Stylish Design */}
           <aside className="hidden w-[260px] shrink-0 lg:sticky lg:top-24 lg:block">
             <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-lg shadow-neutral-200/40">
               <div className="bg-neutral-950 px-5 py-4 text-white">
@@ -785,7 +768,6 @@ function Products() {
             </div>
           </aside>
 
-          {/* Product Grid */}
           <div className="min-w-0 w-full flex-1">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-neutral-500">
@@ -858,7 +840,6 @@ function Products() {
           </div>
         </div>
 
-        {/* Mobile/Tablet Filter Overlay (Drawer) */}
         {showFilters && (
           <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm lg:hidden transition-opacity">
             <div className="h-full w-full max-w-[320px] overflow-y-auto bg-white p-5 shadow-2xl animate-in slide-in-from-right duration-300">
@@ -899,7 +880,6 @@ function Products() {
           </div>
         )}
 
-        {/* Bottom Brand Message */}
         <div className="mt-16 border-t border-neutral-200 pt-8 text-center">
           <p className="text-sm text-neutral-500">
             Good style. No extra effort.{" "}
@@ -928,7 +908,6 @@ function FilterBox({
 }) {
   return (
     <div className="w-full">
-      {/* Categories */}
       <div className="border-b border-neutral-100 pb-5">
         <h4 className="mb-3 text-sm font-extrabold text-neutral-900">
           Category
@@ -959,7 +938,6 @@ function FilterBox({
         </div>
       </div>
 
-      {/* Price Range */}
       <div className="border-b border-neutral-100 py-5">
         <h4 className="mb-3 text-sm font-extrabold text-neutral-900">
           Price Range
@@ -1024,7 +1002,6 @@ function FilterBox({
         </div>
       </div>
 
-      {/* Reset Button */}
       <button
         type="button"
         onClick={resetFilters}
@@ -1089,7 +1066,6 @@ function Product() {
 
   return (
     <main className="wrap page mx-auto w-full max-w-[1380px] px-4 py-5 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-      {/* Breadcrumb */}
       <p className="crumb mb-5 break-words text-sm text-neutral-500 sm:mb-8">
         <Link to="/" className="transition hover:text-orange-600">
           Home
@@ -1101,12 +1077,9 @@ function Product() {
         / <span className="text-neutral-800">{p.title}</span>
       </p>
 
-      {/* Product Layout — Flexbox for strict 1-column mobile/tablet */}
       <div className="flex w-full flex-col items-start gap-7 sm:gap-9 xl:grid xl:grid-cols-2 xl:gap-12">
-        {/* Image Gallery */}
         <div className="w-full min-w-0">
           <div className="w-full">
-            {/* Main Image */}
             <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[#f5f3ef] sm:rounded-2xl">
               <img
                 key={images[selectedImage]}
@@ -1115,7 +1088,6 @@ function Product() {
                 className="h-full w-full object-contain transition-opacity duration-200"
               />
 
-              {/* Image Counter */}
               {images.length > 1 && (
                 <span className="absolute bottom-3 right-3 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
                   {selectedImage + 1} / {images.length}
@@ -1123,7 +1095,6 @@ function Product() {
               )}
             </div>
 
-            {/* Thumbnails */}
             <div className="mt-3 flex gap-2.5 overflow-x-auto pb-2 sm:mt-4 sm:gap-3">
               {images.map((src, i) => (
                 <button
@@ -1150,7 +1121,6 @@ function Product() {
           </div>
         </div>
 
-        {/* Product Information & Reviews */}
         <div className="w-full min-w-0">
           <span className="eyebrow">{p.category}</span>
 
@@ -1158,7 +1128,6 @@ function Product() {
             {p.title}
           </h1>
 
-          {/* Price */}
           <h2 className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold text-neutral-900 sm:text-3xl">
             {money(p.price)}
 
@@ -1169,26 +1138,22 @@ function Product() {
             )}
           </h2>
 
-          {/* Description */}
           <p className="description mt-4 whitespace-pre-line break-words text-sm leading-7 text-neutral-600 sm:text-base">
             {p.description}
           </p>
 
-          {/* Material */}
           {p.material && (
             <p className="mt-4 text-sm text-neutral-700 sm:text-base">
               <b>Material:</b> {p.material}
             </p>
           )}
 
-          {/* Weight / GSM */}
           {p.gsm && (
             <p className="mt-2 text-sm text-neutral-700 sm:text-base">
               <b>Weight:</b> {p.gsm}
             </p>
           )}
 
-          {/* Size Selection */}
           {p.sizes?.length > 0 && (
             <div className="sizes mt-6">
               <b className="mb-3 block text-sm text-neutral-900 sm:text-base">
@@ -1215,7 +1180,6 @@ function Product() {
             </div>
           )}
 
-          {/* Action Buttons */}
           <div className="buyrow mt-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:mt-8">
             <button
               type="button"
@@ -1249,13 +1213,11 @@ function Product() {
             </button>
           </div>
 
-          {/* Customer Reviews */}
           <section className="reviews mt-9 border-t border-neutral-200 pt-6 sm:mt-12 sm:pt-8">
             <h2 className="text-xl font-semibold text-neutral-900 sm:text-2xl">
               Customer reviews ({data.reviews.length})
             </h2>
 
-            {/* Existing Reviews */}
             <div className="mt-5 space-y-4">
               {data.reviews.map((r) => (
                 <article
@@ -1283,7 +1245,6 @@ function Product() {
               ))}
             </div>
 
-            {/* Review Form */}
             <form
               className="box stack mt-6 space-y-4 rounded-xl border border-neutral-200 p-4 sm:p-6"
               onSubmit={review}
@@ -1348,7 +1309,6 @@ function Cart() {
   return (
     <main className="min-h-screen bg-[#faf9f6] px-3 py-6 text-neutral-900 sm:px-5 sm:py-10 lg:px-8">
       <div className="mx-auto w-full max-w-[1300px]">
-        {/* Page Heading */}
         <div className="mb-7 sm:mb-10">
           <div className="mb-3 flex items-center gap-2">
             <span className="h-px w-7 bg-orange-500" />
@@ -1367,7 +1327,6 @@ function Cart() {
         </div>
 
         {!cart.length ? (
-          /* ============ EMPTY CART ============ */
           <section className="rounded-3xl border border-neutral-200 bg-white px-5 py-14 text-center shadow-sm sm:px-8 sm:py-20">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-orange-50 text-orange-500">
               <ShoppingBag size={36} />
@@ -1391,11 +1350,7 @@ function Cart() {
           </section>
         ) : (
           <>
-            {/* ============================================================ */}
-            {/* DESKTOP VIEW (lg+) — Image + info row + sticky sidebar       */}
-            {/* ============================================================ */}
             <div className="hidden lg:grid lg:grid-cols-12 lg:items-start lg:gap-8">
-              {/* Left: cart items */}
               <section className="col-span-8 space-y-3">
                 <div className="mb-2 flex items-center justify-between rounded-2xl border border-neutral-200 bg-white px-6 py-4">
                   <h2 className="text-lg font-extrabold">আপনার পণ্যসমূহ</h2>
@@ -1409,7 +1364,6 @@ function Cart() {
                     key={i.key}
                     className="group flex items-center gap-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm transition hover:border-orange-200 hover:shadow-md"
                   >
-                    {/* Image */}
                     <Link
                       to="/products"
                       className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-neutral-100"
@@ -1424,7 +1378,6 @@ function Cart() {
                       />
                     </Link>
 
-                    {/* Info */}
                     <div className="min-w-0 flex-1">
                       <h3 className="truncate text-base font-extrabold text-neutral-900">
                         {i.title}
@@ -1437,7 +1390,6 @@ function Cart() {
                       </p>
                     </div>
 
-                    {/* Quantity */}
                     <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-lg border border-neutral-200">
                       <button
                         type="button"
@@ -1463,14 +1415,12 @@ function Cart() {
                       </button>
                     </div>
 
-                    {/* Line total */}
                     <div className="w-28 shrink-0 text-right">
                       <p className="text-lg font-black text-orange-600 tabular-nums">
                         {money(i.price * i.quantity)}
                       </p>
                     </div>
 
-                    {/* Remove */}
                     <button
                       type="button"
                       onClick={() => remove(i.key)}
@@ -1491,7 +1441,6 @@ function Cart() {
                 </Link>
               </section>
 
-              {/* Right: sticky summary */}
               <aside className="col-span-4 lg:sticky lg:top-6">
                 <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
                   <div className="bg-neutral-950 px-6 py-5 text-white">
@@ -1570,9 +1519,6 @@ function Cart() {
               </aside>
             </div>
 
-            {/* ============================================================ */}
-            {/* TABLET + MOBILE VIEW (<lg) — Card list + sticky bottom bar   */}
-            {/* ============================================================ */}
             <div className="lg:hidden">
               <div className="mb-4 flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-4 py-3">
                 <span className="text-sm font-bold text-neutral-800">
@@ -1590,7 +1536,6 @@ function Cart() {
                     className="rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm transition hover:border-orange-200 sm:p-4"
                   >
                     <div className="flex gap-3 sm:gap-4">
-                      {/* Image */}
                       <Link
                         to="/products"
                         className="h-24 w-20 shrink-0 overflow-hidden rounded-xl bg-neutral-100 sm:h-28 sm:w-24"
@@ -1606,7 +1551,6 @@ function Cart() {
                         />
                       </Link>
 
-                      {/* Info */}
                       <div className="flex min-w-0 flex-1 flex-col">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -1629,7 +1573,6 @@ function Cart() {
                         </div>
 
                         <div className="mt-auto flex flex-wrap items-end justify-between gap-2 pt-3">
-                          {/* Quantity */}
                           <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-neutral-200">
                             <button
                               type="button"
@@ -1655,7 +1598,6 @@ function Cart() {
                             </button>
                           </div>
 
-                          {/* Total */}
                           <div className="text-right">
                             <p className="text-[10px] text-neutral-400">
                               মোট মূল্য
@@ -1679,7 +1621,6 @@ function Cart() {
                 </Link>
               </div>
 
-              {/* Sticky bottom summary */}
               <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-3 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] backdrop-blur sm:px-5">
                 <div className="mx-auto flex w-full max-w-[1300px] items-center gap-3">
                   <div className="min-w-0 flex-1">
@@ -1731,12 +1672,11 @@ function Checkout() {
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-  // ✅ Payment methods with imported images
   const methods = [
     {
       v: "cod",
       l: "Cash on delivery",
-      icon: "💵", // Emoji for COD
+      icon: "💵",
       activeBg: "bg-orange-50",
       activeBorder: "border-orange-500",
       activeText: "text-orange-700",
@@ -1745,7 +1685,7 @@ function Checkout() {
     {
       v: "bkash",
       l: "bKash",
-      img: bkashLogo, // ✅ Image imported at the top
+      img: bkashLogo,
       activeBg: "bg-pink-50",
       activeBorder: "border-pink-500",
       activeText: "text-pink-700",
@@ -1754,7 +1694,7 @@ function Checkout() {
     {
       v: "nagad",
       l: "Nagad",
-      img: nagadLogo, // ✅ Image imported at the top
+      img: nagadLogo,
       activeBg: "bg-amber-50",
       activeBorder: "border-amber-700",
       activeText: "text-amber-800",
@@ -1763,7 +1703,7 @@ function Checkout() {
     {
       v: "rocket",
       l: "Rocket",
-      img: rocketLogo, // ✅ Image imported at the top
+      img: rocketLogo,
       activeBg: "bg-purple-50",
       activeBorder: "border-purple-500",
       activeText: "text-purple-700",
@@ -1838,7 +1778,6 @@ function Checkout() {
 
   const labelCls = "mb-1.5 block text-xs font-bold text-neutral-700";
 
-  /* Empty cart */
   if (!cart.length) {
     return (
       <main className="min-h-screen bg-[#faf9f6] px-3 py-6 sm:px-5 sm:py-10 lg:px-8">
@@ -1866,7 +1805,6 @@ function Checkout() {
     );
   }
 
-  // Desktop payment chips (4 columns)
   const renderMethodsDesktop = () => (
     <div className="grid grid-cols-4 gap-2">
       {methods.map((m) => {
@@ -1886,7 +1824,6 @@ function Checkout() {
               onChange={() => setMethod(m.v)}
               className="sr-only"
             />
-            {/* ✅ Render Image if available, otherwise Emoji */}
             <span className="flex h-6 w-8 shrink-0 items-center justify-center">
               {m.img ? (
                 <img
@@ -1911,7 +1848,6 @@ function Checkout() {
     </div>
   );
 
-  // Mobile/Tablet payment chips (1 column)
   const renderMethodsMobile = () => (
     <div className="flex flex-col gap-2.5">
       {methods.map((m) => {
@@ -1931,7 +1867,6 @@ function Checkout() {
               onChange={() => setMethod(m.v)}
               className="sr-only"
             />
-            {/* ✅ Render Image if available, otherwise Emoji */}
             <span className="flex h-7 w-10 shrink-0 items-center justify-center">
               {m.img ? (
                 <img
@@ -1979,7 +1914,6 @@ function Checkout() {
     </div>
   );
 
-  // Shared Payment Instruction Box
   const paymentBox = method !== "cod" && (
     <div
       className={`mt-3 rounded-lg border p-3 ${
@@ -2064,11 +1998,8 @@ function Checkout() {
         <Heading tag="ALMOST YOURS" title="Checkout." />
 
         <form onSubmit={submit} className="mt-6">
-          {/* Flex-col on mobile, Grid on desktop */}
           <div className="flex flex-col gap-5 lg:grid lg:grid-cols-12 lg:items-start lg:gap-6">
-            {/* ================= FORM BLOCK ================= */}
             <div className="w-full min-w-0 space-y-4 lg:order-1 lg:col-span-7">
-              {/* Desktop Form */}
               <div className="hidden lg:block">
                 <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                   <div className="mb-4 flex items-center gap-2">
@@ -2167,7 +2098,6 @@ function Checkout() {
                 </section>
               </div>
 
-              {/* Mobile + Tablet Form (1 Column Full-Width) */}
               <div className="space-y-4 lg:hidden">
                 <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
                   <div className="mb-4 flex items-center gap-2">
@@ -2265,14 +2195,12 @@ function Checkout() {
                       পেমেন্ট পদ্ধতি
                     </h2>
                   </div>
-                  {/* 1 Column Mobile Payment Options */}
                   {renderMethodsMobile()}
                   {paymentBox}
                 </section>
               </div>
             </div>
 
-            {/* ================= SUMMARY BLOCK ================= */}
             <aside className="w-full min-w-0 lg:order-2 lg:col-span-5 lg:sticky lg:top-6">
               <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between bg-neutral-950 px-4 py-3 text-white sm:px-5">
@@ -2338,7 +2266,6 @@ function Checkout() {
             </aside>
           </div>
 
-          {/* Mobile/Tablet Sticky Bar */}
           <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-3 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur sm:px-5 lg:hidden">
             <div
               className="mx-auto flex w-full max-w-[1100px] items-center gap-3"
@@ -2422,7 +2349,6 @@ function Track() {
   return (
     <main className="min-h-screen bg-[#faf9f6] px-4 py-8 sm:py-12">
       <div className="mx-auto w-full max-w-2xl">
-        {/* Heading */}
         <div className="mb-7 text-center">
           <p className="text-sm font-bold tracking-wide text-orange-600">
             TAKE IT EASY
@@ -2437,7 +2363,6 @@ function Track() {
           </p>
         </div>
 
-        {/* Tracking Form */}
         <form
           onSubmit={submit}
           className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-8"
@@ -2469,7 +2394,7 @@ function Track() {
                 inputMode="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="যে নম্বর দিয়ে অর্ডার করেছেন"
+                placeholder="যে নম্বর দিয়ে অর্ডার করেছেন"
                 autoComplete="tel"
                 required
                 className="min-h-12 w-full rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm outline-none transition placeholder:text-neutral-400 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100"
@@ -2499,7 +2424,6 @@ function Track() {
           </p>
         </form>
 
-        {/* Order Result */}
         {order && (
           <section
             aria-live="polite"
@@ -2572,7 +2496,6 @@ function Track() {
           </section>
         )}
 
-        {/* Help */}
         <p className="mt-6 text-center text-sm text-neutral-500">
           সাহায্য প্রয়োজন?{" "}
           <a
@@ -2588,8 +2511,6 @@ function Track() {
     </main>
   );
 }
-
-/* About */
 
 /* Contact  page */
 
@@ -2613,7 +2534,7 @@ function Contact() {
       icon: "💳",
       title: "Payment Support",
       description:
-        "পেমেন্ট, Cash on Delivery বা অর্ডার কনফার্মেশন নিয়ে সাহায্য নাও।",
+        "পেমেন্ট, Cash on Delivery বা অর্ডার কনফার্মেশন নিয়ে সাহায্য নাও।",
       message: "Hi Take It Easy! I need help with payment.",
     },
   ];
@@ -2628,13 +2549,10 @@ function Contact() {
 
   return (
     <main className="mx-auto w-full min-w-0 max-w-[1300px] box-border px-4 py-6 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
-      {/* Hero Section */}
       <section className="relative isolate overflow-hidden rounded-3xl bg-neutral-950 px-5 py-12 text-white sm:px-8 sm:py-16 md:px-10 md:py-20 lg:px-14 lg:py-24">
-        {/* Decorative Elements - Gradient Glow */}
         <div className="pointer-events-none absolute -right-20 -top-20 -z-10 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl sm:h-96 sm:w-96" />
         <div className="pointer-events-none absolute -bottom-20 -left-20 -z-10 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl sm:h-96 sm:w-96" />
 
-        {/* Subtle Grid Pattern Overlay */}
         <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
 
         <div className="relative z-10 w-full max-w-3xl">
@@ -2652,11 +2570,10 @@ function Contact() {
           </h1>
 
           <p className="mt-5 max-w-xl text-sm leading-7 text-neutral-400 sm:mt-6 sm:text-base sm:leading-8">
-            অর্ডার, ডেলিভারি কিংবা পছন্দের প্রোডাক্ট নিয়ে কোনো প্রশ্ন আছে? Take
+            অর্ডার, ডেলিভারি কিংবা পছন্দের প্রোডাক্ট নিয়ে কোনো প্রশ্ন আছে? Take
             It Easy টিম তোমাকে সাহায্য করতে প্রস্তুত।
           </p>
 
-          {/* Contact Actions */}
           <div className="mt-8 flex w-full flex-col gap-3 min-[480px]:flex-row min-[480px]:flex-wrap sm:mt-10">
             <button
               type="button"
@@ -2699,7 +2616,6 @@ function Contact() {
           </div>
         </div>
 
-        {/* Trust Indicators */}
         <div className="relative z-10 mt-12 flex flex-col gap-3 border-t border-white/10 pt-6 min-[420px]:flex-row min-[420px]:flex-wrap min-[420px]:gap-x-6 min-[420px]:gap-y-3 sm:mt-16 sm:pt-8">
           {["Friendly Support", "Easy Ordering", "Cash on Delivery"].map(
             (item) => (
@@ -2717,7 +2633,6 @@ function Contact() {
         </div>
       </section>
 
-      {/* Support Options */}
       <section className="mt-12 min-w-0 sm:mt-16 lg:mt-20">
         <div className="mb-8 flex min-w-0 flex-col gap-2 sm:mb-10">
           <span className="text-[10px] font-extrabold tracking-[0.2em] text-orange-500 sm:text-xs">
@@ -2729,7 +2644,7 @@ function Contact() {
           </h2>
 
           <p className="max-w-xl text-sm leading-7 text-neutral-500 sm:text-base">
-            তোমার প্রয়োজন অনুযায়ী একটি অপশন বেছে নাও। সরাসরি WhatsApp-এ আমাদের
+            তোমার প্রয়োজন অনুযায়ী একটি অপশন বেছে নাও। সরাসরি WhatsApp-এ আমাদের
             সাথে কথা বলতে পারবে।
           </p>
         </div>
@@ -2742,7 +2657,6 @@ function Contact() {
               onClick={() => openWhatsApp(item.message)}
               className="group relative flex h-full min-w-0 flex-col items-start overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-950/5 focus:outline-none focus:ring-2 focus:ring-orange-400 sm:p-7"
             >
-              {/* Hover Gradient Background */}
               <div className="absolute inset-0 -z-10 bg-gradient-to-br from-orange-50/0 to-orange-50/0 transition-colors duration-300 group-hover:from-orange-50/50 group-hover:to-transparent" />
 
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl transition-colors group-hover:bg-orange-100 sm:h-14 sm:w-14 sm:rounded-2xl">
@@ -2891,8 +2805,6 @@ function Register() {
 }
 
 /* Customer Profile */
-
-/* Customer Profile — Responsive Full-Width Layout */
 function Profile() {
   const { customer, updateProfile, logoutCustomer } = useAuth();
 
@@ -2975,7 +2887,6 @@ function Profile() {
       />
 
       <div className="tie-account-layout">
-        {/* Account details */}
         <aside className="tie-account-sidebar">
           <form className="box stack tie-profile-form" onSubmit={save}>
             <div className="tie-profile-heading">
@@ -3033,7 +2944,6 @@ function Profile() {
           </form>
         </aside>
 
-        {/* Orders */}
         <section className="tie-orders-section">
           <div className="tie-orders-heading">
             <div>
@@ -3098,7 +3008,6 @@ function Profile() {
 
                 return (
                   <article className="tie-order-card" key={order._id}>
-                    {/* Order header */}
                     <div className="tie-order-card-header">
                       <div className="tie-order-number">
                         <span>ORDER NUMBER</span>
@@ -3129,7 +3038,6 @@ function Profile() {
                       </span>
                     </div>
 
-                    {/* Product items */}
                     <div className="tie-order-items">
                       {(order.items || []).map((item, index) => (
                         <div
@@ -3172,7 +3080,6 @@ function Profile() {
                       ))}
                     </div>
 
-                    {/* Price summary */}
                     <div className="tie-order-summary">
                       <div>
                         <span>Subtotal</span>
@@ -3190,7 +3097,6 @@ function Profile() {
                       </div>
                     </div>
 
-                    {/* Payment and tracking */}
                     <div className="tie-order-bottom">
                       <div className="tie-payment">
                         <span>PAYMENT METHOD</span>
@@ -3212,7 +3118,6 @@ function Profile() {
                       </Link>
                     </div>
 
-                    {/* Delivery address */}
                     {(order.address || order.city) && (
                       <div className="tie-delivery-address">
                         <span>DELIVERY ADDRESS</span>
@@ -3412,13 +3317,20 @@ function Dashboard() {
   );
 }
 
-/* Admin Products */
+/* ============================================================ */
+/* Admin Products — UPDATED with EDIT + MULTIPLE IMAGE UPLOAD    */
+/* ============================================================ */
 function AdminProducts() {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [file, setFile] = useState(null);
 
-  const [f, setF] = useState({
+  // ✅ Multiple files support
+  const [files, setFiles] = useState([]);
+
+  // ✅ Edit mode state
+  const [editingId, setEditingId] = useState(null);
+
+  const emptyForm = {
     title: "",
     price: "",
     compareAtPrice: "",
@@ -3432,7 +3344,9 @@ function AdminProducts() {
     gsm: "220 GSM",
     tags: "",
     imageUrls: "",
-  });
+  };
+
+  const [f, setF] = useState(emptyForm);
 
   async function refresh() {
     setItems(await api("/admin/products"));
@@ -3442,63 +3356,103 @@ function AdminProducts() {
     refresh().catch((e) => msg(e.message, "error"));
   }, []);
 
+  function resetForm() {
+    setF(emptyForm);
+    setFiles([]);
+    setEditingId(null);
+  }
+
+  function startEdit(p) {
+    setEditingId(p._id);
+    setFiles([]);
+    setF({
+      title: p.title || "",
+      price: String(p.price ?? ""),
+      compareAtPrice: String(p.compareAtPrice ?? ""),
+      category: p.category || "",
+      description: p.description || "",
+      sizes: (p.sizes || []).join(", "),
+      colors: (p.colors || []).join(", "),
+      stock: String(p.stock ?? 0),
+      sku: p.sku || "",
+      material: p.material || "",
+      gsm: p.gsm || "",
+      tags: (p.tags || []).join(", "),
+      imageUrls: (p.images || []).join("\n"),
+    });
+
+    // scroll to form
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
 
     try {
+      // Start with URL lines the admin typed
       let images = f.imageUrls
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
 
-      if (file) {
-        const imageData = await fileData(file);
-
-        images.unshift(
-          (
-            await api("/uploads/image", {
-              method: "POST",
-              body: JSON.stringify({ imageData }),
-            })
-          ).imageUrl,
+      // ✅ Upload all selected files at once (bulk endpoint)
+      if (files.length > 0) {
+        const base64List = await Promise.all(
+          files.map((file) => fileData(file)),
         );
+
+        const { imageUrls: uploaded } = await api("/uploads/images", {
+          method: "POST",
+          body: JSON.stringify({ images: base64List }),
+        });
+
+        images = [...uploaded, ...images];
       }
 
-      await api("/admin/products", {
-        method: "POST",
-        body: JSON.stringify({
-          ...f,
-          price: Number(f.price),
-          compareAtPrice: Number(f.compareAtPrice || 0),
-          stock: Number(f.stock || 0),
-          images,
-          sizes: f.sizes
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
-          colors: f.colors
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
-          tags: f.tags
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
-        }),
-      });
+      const payload = {
+        title: f.title,
+        price: Number(f.price),
+        compareAtPrice: Number(f.compareAtPrice || 0),
+        category: f.category,
+        description: f.description,
+        stock: Number(f.stock || 0),
+        sku: f.sku,
+        material: f.material,
+        gsm: f.gsm,
+        images,
+        sizes: f.sizes
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        colors: f.colors
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        tags: f.tags
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+      };
 
-      setF({
-        ...f,
-        title: "",
-        price: "",
-        description: "",
-        imageUrls: "",
-      });
+      if (editingId) {
+        // ✅ Update existing product
+        await api("/admin/products/" + editingId, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        msg("Product updated");
+      } else {
+        // ✅ Create new product
+        await api("/admin/products", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        msg("Product added");
+      }
 
-      setFile(null);
+      resetForm();
       await refresh();
-      msg("Product added");
     } catch (e) {
       msg(e.message, "error");
     } finally {
@@ -3511,11 +3465,28 @@ function AdminProducts() {
       <Heading
         tag="CATALOGUE"
         title="Products."
-        desc="Add a product, then manage the list below."
+        desc={
+          editingId
+            ? "Editing product — make changes and save."
+            : "Add a product, then manage the list below."
+        }
       />
 
       <form className="box stack" onSubmit={submit}>
-        <h2>Add product</h2>
+        <div className="flex items-center justify-between">
+          <h2>{editingId ? "Edit product" : "Add product"}</h2>
+
+          {editingId && (
+            <button
+              type="button"
+              className="btn outline"
+              onClick={resetForm}
+              disabled={busy}
+            >
+              Cancel edit
+            </button>
+          )}
+        </div>
 
         <div className="formgrid">
           {[
@@ -3555,17 +3526,25 @@ function AdminProducts() {
             />
           </label>
 
-          <label>
-            Upload image (5 MB max)
+          {/* ✅ Multiple image upload */}
+          <label className="span">
+            Upload images (multiple, 5 MB each max)
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              multiple
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
             />
+            {files.length > 0 && (
+              <small className="text-green-600">
+                ✓ {files.length} image{files.length > 1 ? "s" : ""} selected
+                {editingId ? " (will be added to existing images)" : ""}
+              </small>
+            )}
           </label>
 
-          <label>
-            Or image URLs, one per line
+          <label className="span">
+            Image URLs, one per line
             <textarea
               value={f.imageUrls}
               onChange={(e) => setF({ ...f, imageUrls: e.target.value })}
@@ -3574,7 +3553,8 @@ function AdminProducts() {
         </div>
 
         <button className="btn orange" disabled={busy}>
-          {busy ? "Saving..." : "Save product"} <Plus />
+          {busy ? "Saving..." : editingId ? "Save changes" : "Save product"}{" "}
+          {editingId ? <Pencil size={16} /> : <Plus size={16} />}
         </button>
       </form>
 
@@ -3589,11 +3569,27 @@ function AdminProducts() {
               <b>{p.title}</b>
               <small>
                 {money(p.price)} · {p.category} · Stock {p.stock}
+                {p.images?.length > 1 && (
+                  <>
+                    {" "}
+                    · <ImageIcon size={11} className="inline" />{" "}
+                    {p.images.length} images
+                  </>
+                )}
               </small>
             </div>
 
             <button
+              className="btn outline"
+              onClick={() => startEdit(p)}
+              type="button"
+            >
+              <Pencil size={14} /> Edit
+            </button>
+
+            <button
               className="remove"
+              type="button"
               onClick={async () => {
                 if (!confirm("Delete " + p.title + "?")) return;
 
@@ -3603,6 +3599,10 @@ function AdminProducts() {
                   });
 
                   await refresh();
+
+                  // If deleting the one being edited, reset form
+                  if (editingId === p._id) resetForm();
+
                   msg("Product deleted");
                 } catch (e) {
                   msg(e.message, "error");
