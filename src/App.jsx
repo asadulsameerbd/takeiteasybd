@@ -41,6 +41,8 @@ import {
   TrendingUp,
   Wallet,
   AlertCircle,
+  Upload,
+  Check,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { api, fileData } from "./api";
@@ -488,7 +490,7 @@ function Heading({ tag, title, desc }) {
 }
 
 /* ============================================================ */
-/* Home Page                                                    */
+/* Home Page — banner text fallback removed                     */
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
@@ -554,6 +556,12 @@ function Home() {
     setBannerImageLoaded(false);
   }, [slide]);
 
+  // ✅ Text fields only render if admin actually provided them
+  const hasTitle = Boolean(b?.title && b.title.trim());
+  const hasSubtitle = Boolean(b?.subtitle && b.subtitle.trim());
+  const hasEyebrow = Boolean(b?.eyebrow && b.eyebrow.trim());
+  const hasButtonText = Boolean(b?.buttonText && b.buttonText.trim());
+
   return (
     <main>
       <section className="wrap hero">
@@ -588,16 +596,19 @@ function Home() {
           )}
 
           <div className="herotext">
-            <span className="eyebrow">TAKE IT EASY / WEAR IT EASY</span>
+            {/* ✅ Only show eyebrow if admin provided it */}
+            {hasEyebrow && <span className="eyebrow">{b.eyebrow}</span>}
 
-            <h1>{b?.title || "Wear your own kind of easy."}</h1>
+            {/* ✅ Only show title if admin provided it */}
+            {hasTitle && <h1>{b.title}</h1>}
 
-            <p>
-              {b?.subtitle || "Everyday essentials. Made to move with you."}
-            </p>
+            {/* ✅ Only show subtitle if admin provided it */}
+            {hasSubtitle && <p>{b.subtitle}</p>}
 
+            {/* ✅ Button always shows (admin can customize text/link) */}
             <Link className="btn orange" to={b?.buttonLink || "/products"}>
-              {b?.buttonText || "Shop collection"} <ArrowUpRight />
+              {hasButtonText ? b.buttonText : "Shop collection"}{" "}
+              <ArrowUpRight />
             </Link>
           </div>
 
@@ -1833,7 +1844,9 @@ function Cart() {
   );
 }
 
-/* Checkout */
+/* ============================================================ */
+/* Checkout — with upload spinner                               */
+/* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
   const { customer } = useAuth();
@@ -1843,6 +1856,11 @@ function Checkout() {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [delivery, setDelivery] = useState(80);
+
+  // ✅ Image upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadedUrl, setUploadedUrl] = useState("");
+  const [uploadError, setUploadError] = useState("");
 
   const [f, setF] = useState({
     customerName: customer?.user?.name || "",
@@ -1897,6 +1915,39 @@ function Checkout() {
 
   const activeMethod = methods.find((m) => m.v === method);
 
+  // ✅ Auto upload when file selected
+  async function handleFileUpload(selectedFile) {
+    setFile(selectedFile || null);
+    setUploadedUrl("");
+    setUploadError("");
+
+    if (!selectedFile) return;
+
+    // Check size (5MB max)
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      setUploadError("Image must be under 5 MB.");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const imageData = await fileData(selectedFile);
+
+      const response = await api("/public/payment-proof", {
+        method: "POST",
+        auth: false,
+        body: JSON.stringify({ imageData }),
+      });
+
+      setUploadedUrl(response.imageUrl);
+    } catch (err) {
+      setUploadError(err.message || "Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -1906,13 +1957,13 @@ function Checkout() {
 
       if (method !== "cod" && proof === "image") {
         if (!file) throw new Error("Choose a screenshot.");
-        paymentScreenshot = (
-          await api("/public/payment-proof", {
-            method: "POST",
-            auth: false,
-            body: JSON.stringify({ imageData: await fileData(file) }),
-          })
-        ).imageUrl;
+        if (uploading) throw new Error("Please wait for the upload to finish.");
+        if (!uploadedUrl)
+          throw new Error(
+            uploadError || "Image upload failed. Please try again.",
+          );
+
+        paymentScreenshot = uploadedUrl;
       }
 
       if (method !== "cod" && proof === "txn" && !f.transactionId.trim()) {
@@ -2005,7 +2056,10 @@ function Checkout() {
             <input
               type="radio"
               checked={active}
-              onChange={() => setMethod(m.v)}
+              onChange={() => {
+                setMethod(m.v);
+                setUploadError("");
+              }}
               className="sr-only"
             />
             <span className="flex h-6 w-8 shrink-0 items-center justify-center">
@@ -2048,7 +2102,10 @@ function Checkout() {
             <input
               type="radio"
               checked={active}
-              onChange={() => setMethod(m.v)}
+              onChange={() => {
+                setMethod(m.v);
+                setUploadError("");
+              }}
               className="sr-only"
             />
             <span className="flex h-7 w-10 shrink-0 items-center justify-center">
@@ -2131,7 +2188,14 @@ function Checkout() {
           <button
             key={v}
             type="button"
-            onClick={() => setProof(v)}
+            onClick={() => {
+              setProof(v);
+              if (v === "txn") {
+                setFile(null);
+                setUploadedUrl("");
+                setUploadError("");
+              }
+            }}
             className={`flex-1 rounded-md border bg-white px-2 py-1.5 text-xs font-bold transition ${
               proof === v
                 ? activeMethod?.v === "bkash"
@@ -2158,17 +2222,78 @@ function Checkout() {
           />
         ) : (
           <>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0])}
-              required
-              className="block w-full cursor-pointer rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] font-bold file:text-white hover:file:bg-neutral-800"
-            />
-            {file && (
-              <p className="mt-1 truncate text-[11px] text-green-600">
-                ✓ {file.name}
-              </p>
+            {/* ✅ File input — disabled while uploading */}
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleFileUpload(e.target.files?.[0])}
+                disabled={uploading}
+                required={!uploadedUrl}
+                className="block w-full cursor-pointer rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-white hover:file:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
+
+            {/* ✅ Uploading state */}
+            {uploading && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5">
+                <span className="tie-inline-loader dark" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-orange-800">
+                    Uploading screenshot...
+                  </p>
+                  <p className="text-[10px] text-orange-600">
+                    Please wait, this may take a moment.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ✅ Success state */}
+            {!uploading && uploadedUrl && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                  <Check size={12} strokeWidth={3} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold text-emerald-800">
+                    Screenshot uploaded successfully
+                  </p>
+                  <a
+                    href={uploadedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-semibold text-emerald-600 underline"
+                  >
+                    View image ↗
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* ✅ Error state */}
+            {!uploading && uploadError && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+                <AlertCircle
+                  size={14}
+                  className="mt-0.5 shrink-0 text-red-600"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-red-700">
+                    Upload failed
+                  </p>
+                  <p className="text-[10px] text-red-600">{uploadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (file) handleFileUpload(file);
+                    }}
+                    className="mt-1 text-[10px] font-bold text-red-700 underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              </div>
             )}
           </>
         )}
@@ -2439,10 +2564,14 @@ function Checkout() {
                   </div>
                   <button
                     type="submit"
-                    disabled={busy}
+                    disabled={busy || uploading}
                     className="mt-4 hidden min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex"
                   >
-                    {busy ? (
+                    {uploading ? (
+                      <>
+                        <InlineLoader /> Uploading...
+                      </>
+                    ) : busy ? (
                       <>
                         <InlineLoader /> Placing...
                       </>
@@ -2472,10 +2601,14 @@ function Checkout() {
               </div>
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || uploading}
                 className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busy ? (
+                {uploading ? (
+                  <>
+                    <InlineLoader /> Uploading...
+                  </>
+                ) : busy ? (
                   <>
                     <InlineLoader /> Placing...
                   </>
@@ -2815,7 +2948,7 @@ function Contact() {
                   d="M4 5a2 2 0 0 1 2-2h2.3a1 1 0 0 1 .95.68l1.1 3.3a1 1 0 0 1-.48 1.2l-1.7.94a11 11 0 0 0 4.7 4.7l.94-1.7a1 1 0 0 1 1.2-.48l3.3 1.1a1 1 0 0 1 .69.95V16a2 2 0 0 1-2 2h-1C9.93 18 4 12.07 4 5.9V5Z"
                 />
               </svg>
-              01933200699{" "}
+              01933200699
             </a>
           </div>
         </div>
@@ -3341,7 +3474,7 @@ function Profile() {
 }
 
 /* ============================================================ */
-/* Admin Login — with clear error messages                      */
+/* Admin Login                                                  */
 /* ============================================================ */
 function AdminLogin() {
   const { adminToken, loginAdmin } = useAuth();
@@ -3880,7 +4013,7 @@ function AdminProducts() {
 }
 
 /* ============================================================ */
-/* Admin Banners — image-only upload allowed                    */
+/* Admin Banners                                                */
 /* ============================================================ */
 function AdminBanners() {
   const [items, setItems] = useState([]);
@@ -3914,7 +4047,6 @@ function AdminBanners() {
     try {
       let imageUrl = f.imageUrl.trim();
 
-      // ✅ Upload file if provided (takes priority)
       if (file) {
         imageUrl = (
           await api("/uploads/image", {
@@ -3926,7 +4058,6 @@ function AdminBanners() {
         ).imageUrl;
       }
 
-      // ✅ Only image is required — title/subtitle are optional
       if (!imageUrl) {
         throw new Error("Please upload an image or paste an image URL.");
       }
@@ -4003,7 +4134,7 @@ function AdminBanners() {
             <input
               value={f.title}
               onChange={(e) => setF({ ...f, title: e.target.value })}
-              placeholder="Leave empty to use default"
+              placeholder="Leave empty to hide"
             />
           </label>
 
@@ -4013,7 +4144,7 @@ function AdminBanners() {
             <input
               value={f.subtitle}
               onChange={(e) => setF({ ...f, subtitle: e.target.value })}
-              placeholder="Leave empty to use default"
+              placeholder="Leave empty to hide"
             />
           </label>
 
@@ -4128,7 +4259,7 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* Admin Orders — with revenue stats                            */
+/* Admin Orders                                                  */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -4239,12 +4370,10 @@ function AdminOrders() {
     const delivered = items.filter((o) => o.status === "delivered").length;
     const cancelled = items.filter((o) => o.status === "cancelled").length;
 
-    // ✅ Total revenue: all orders EXCEPT cancelled
     const totalRevenue = items
       .filter((o) => o.status !== "cancelled")
       .reduce((s, o) => s + Number(o.total || 0), 0);
 
-    // ✅ Success revenue: only delivered orders
     const successRevenue = items
       .filter((o) => o.status === "delivered")
       .reduce((s, o) => s + Number(o.total || 0), 0);
@@ -4339,7 +4468,6 @@ function AdminOrders() {
         </button>
       </div>
 
-      {/* ✅ Revenue highlight cards */}
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-4 ring-1 ring-inset ring-orange-100">
           <div className="flex items-center justify-between">
