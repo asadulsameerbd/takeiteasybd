@@ -41,8 +41,9 @@ import {
   TrendingUp,
   Wallet,
   AlertCircle,
-  Upload,
   Check,
+  Tag,
+  Percent,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { api, fileData } from "./api";
@@ -363,15 +364,39 @@ function Layout() {
 }
 
 /* ============================================================ */
+/* Discount helper                                              */
+/* ============================================================ */
+function getDiscountInfo(p) {
+  const price = Number(p.price) || 0;
+  const compare = Number(p.compareAtPrice) || 0;
+  const custom = Number(p.discountPercent) || 0;
+
+  // ✅ Custom percent (admin set) takes priority
+  if (custom > 0 && custom < 100) {
+    const original = Math.round(price / (1 - custom / 100));
+    return {
+      percent: Math.round(custom),
+      original: Math.max(original, price),
+      source: "custom",
+    };
+  }
+
+  // ✅ Auto-calculate from compareAtPrice
+  if (compare > price && price > 0) {
+    const percent = Math.round((1 - price / compare) * 100);
+    return { percent, original: compare, source: "auto" };
+  }
+
+  return { percent: 0, original: 0, source: "none" };
+}
+
+/* ============================================================ */
 /* Product Card — Stock Out auto display                        */
 /* ============================================================ */
 function Card({ p, add }) {
-  const hasSale = Number(p.compareAtPrice) > Number(p.price);
   const isOutOfStock = Number(p.stock || 0) <= 0;
-
-  const discount = hasSale
-    ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100)
-    : 0;
+  const discount = getDiscountInfo(p);
+  const hasSale = discount.percent > 0;
 
   return (
     <article className="group relative flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-stone-200/80 bg-white shadow-sm transition-all duration-300 hover:border-stone-300 hover:shadow-lg sm:rounded-2xl sm:hover:-translate-y-1 sm:hover:shadow-xl">
@@ -400,7 +425,7 @@ function Card({ p, add }) {
         ) : (
           hasSale && (
             <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-orange-600 px-2 py-1 text-[9px] font-extrabold leading-tight text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px] sm:tracking-wide">
-              Sale · {discount}% off
+              Sale · {discount.percent}% off
             </span>
           )
         )}
@@ -431,7 +456,7 @@ function Card({ p, add }) {
 
           {hasSale && (
             <del className="text-[11px] font-medium text-stone-400 sm:text-sm">
-              {money(p.compareAtPrice)}
+              {money(discount.original)}
             </del>
           )}
         </div>
@@ -490,7 +515,7 @@ function Heading({ tag, title, desc }) {
 }
 
 /* ============================================================ */
-/* Home Page — banner text fallback removed                     */
+/* Home Page                                                    */
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
@@ -501,8 +526,10 @@ function Home() {
   const [loading, setLoading] = useState(true);
 
   const [bannerImageLoaded, setBannerImageLoaded] = useState(false);
+  const [bannerFading, setBannerFading] = useState(false);
 
   const sentinel = React.useRef(null);
+  const bannerTimeoutRef = React.useRef(null);
 
   useEffect(() => {
     setLoading(true);
@@ -521,13 +548,12 @@ function Home() {
   useEffect(() => {
     if (banners.length < 2) return;
 
-    const id = setInterval(
-      () => setSlide((s) => (s + 1) % banners.length),
-      5000,
-    );
+    const id = setInterval(() => {
+      goToSlide((slide + 1) % banners.length);
+    }, 5000);
 
     return () => clearInterval(id);
-  }, [banners.length]);
+  }, [banners.length, slide]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -548,13 +574,31 @@ function Home() {
     return () => observer.disconnect();
   }, [visible, products.length]);
 
+  // ✅ Smooth transition between banners
+  function goToSlide(nextIndex) {
+    if (nextIndex === slide) return;
+
+    setBannerFading(true);
+
+    if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+
+    bannerTimeoutRef.current = setTimeout(() => {
+      setSlide(nextIndex);
+      setBannerImageLoaded(false);
+    }, 250);
+
+    setTimeout(() => setBannerFading(false), 600);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+    };
+  }, []);
+
   const inStockProducts = products.filter((p) => Number(p.stock || 0) > 0);
 
   const b = banners[slide];
-
-  useEffect(() => {
-    setBannerImageLoaded(false);
-  }, [slide]);
 
   // ✅ Text fields only render if admin actually provided them
   const hasTitle = Boolean(b?.title && b.title.trim());
@@ -566,7 +610,7 @@ function Home() {
     <main>
       <section className="wrap hero">
         <div
-          className="heroimg relative"
+          className="heroimg relative overflow-hidden"
           style={
             b && bannerImageLoaded
               ? {
@@ -578,24 +622,21 @@ function Home() {
                 }
           }
         >
-          {b && !bannerImageLoaded && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center">
-              <Loader text="Loading banner" />
-            </div>
-          )}
+          {/* ✅ Smooth fade overlay during transition */}
+          <div
+            className={`pointer-events-none absolute inset-0 z-[5] bg-black transition-opacity duration-500 ${
+              bannerFading ? "opacity-60" : "opacity-0"
+            }`}
+          />
 
-          {b?.imageUrl && (
-            <img
-              src={b.imageUrl}
-              alt={b.title || "Banner"}
-              className="pointer-events-none absolute h-0 w-0 opacity-0"
-              onLoad={() => setBannerImageLoaded(true)}
-              onError={() => setBannerImageLoaded(true)}
-              aria-hidden="true"
-            />
-          )}
-
-          <div className="herotext">
+          {/* ✅ Scale + fade-in animation on banner content */}
+          <div
+            className={`herotext relative z-20 transition-all duration-700 ease-out ${
+              bannerFading
+                ? "translate-y-2 opacity-0"
+                : "translate-y-0 opacity-100"
+            }`}
+          >
             {/* ✅ Only show eyebrow if admin provided it */}
             {hasEyebrow && <span className="eyebrow">{b.eyebrow}</span>}
 
@@ -612,12 +653,30 @@ function Home() {
             </Link>
           </div>
 
+          {b && !bannerImageLoaded && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center">
+              <Loader text="Loading banner" />
+            </div>
+          )}
+
+          {b?.imageUrl && (
+            <img
+              key={b.imageUrl}
+              src={b.imageUrl}
+              alt={b.title || "Banner"}
+              className="pointer-events-none absolute h-0 w-0 opacity-0"
+              onLoad={() => setBannerImageLoaded(true)}
+              onError={() => setBannerImageLoaded(true)}
+              aria-hidden="true"
+            />
+          )}
+
           {banners.length > 1 && (
-            <div className="slides">
+            <div className="slides relative z-30">
               <button
                 aria-label="Previous banner"
                 onClick={() =>
-                  setSlide((slide + banners.length - 1) % banners.length)
+                  goToSlide((slide + banners.length - 1) % banners.length)
                 }
               >
                 ‹
@@ -625,7 +684,7 @@ function Home() {
               {slide + 1} / {banners.length}
               <button
                 aria-label="Next banner"
-                onClick={() => setSlide((slide + 1) % banners.length)}
+                onClick={() => goToSlide((slide + 1) % banners.length)}
               >
                 ›
               </button>
@@ -1189,6 +1248,7 @@ function Product() {
 
   const p = data.product;
   const isOutOfStock = Number(p.stock || 0) <= 0;
+  const discount = getDiscountInfo(p);
 
   const images = p.images?.length
     ? p.images
@@ -1295,15 +1355,23 @@ function Product() {
             {p.title}
           </h1>
 
-          <h2 className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold text-neutral-900 sm:text-3xl">
-            {money(p.price)}
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h2 className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold text-neutral-900 sm:text-3xl">
+              {money(p.price)}
 
-            {p.compareAtPrice > p.price && (
-              <del className="text-lg font-normal text-neutral-400 sm:text-xl">
-                {money(p.compareAtPrice)}
-              </del>
+              {discount.percent > 0 && (
+                <del className="text-lg font-normal text-neutral-400 sm:text-xl">
+                  {money(discount.original)}
+                </del>
+              )}
+            </h2>
+
+            {discount.percent > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-orange-700">
+                <Percent size={11} /> {discount.percent}% off
+              </span>
             )}
-          </h2>
+          </div>
 
           <p className="description mt-4 whitespace-pre-line break-words text-sm leading-7 text-neutral-600 sm:text-base">
             {p.description}
@@ -1845,7 +1913,7 @@ function Cart() {
 }
 
 /* ============================================================ */
-/* Checkout — with upload spinner                               */
+/* Checkout                                                     */
 /* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
@@ -1857,7 +1925,6 @@ function Checkout() {
   const [busy, setBusy] = useState(false);
   const [delivery, setDelivery] = useState(80);
 
-  // ✅ Image upload state
   const [uploading, setUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState("");
   const [uploadError, setUploadError] = useState("");
@@ -1915,7 +1982,6 @@ function Checkout() {
 
   const activeMethod = methods.find((m) => m.v === method);
 
-  // ✅ Auto upload when file selected
   async function handleFileUpload(selectedFile) {
     setFile(selectedFile || null);
     setUploadedUrl("");
@@ -1923,7 +1989,6 @@ function Checkout() {
 
     if (!selectedFile) return;
 
-    // Check size (5MB max)
     if (selectedFile.size > 5 * 1024 * 1024) {
       setUploadError("Image must be under 5 MB.");
       return;
@@ -1932,7 +1997,7 @@ function Checkout() {
     setUploading(true);
 
     try {
-      const imageData = await fileData(selectedFile);
+      const imageData = await fileData(selectedFile, 500, 0.7);
 
       const response = await api("/public/payment-proof", {
         method: "POST",
@@ -2222,7 +2287,6 @@ function Checkout() {
           />
         ) : (
           <>
-            {/* ✅ File input — disabled while uploading */}
             <div className="relative">
               <input
                 type="file"
@@ -2234,7 +2298,6 @@ function Checkout() {
               />
             </div>
 
-            {/* ✅ Uploading state */}
             {uploading && (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5">
                 <span className="tie-inline-loader dark" />
@@ -2249,7 +2312,6 @@ function Checkout() {
               </div>
             )}
 
-            {/* ✅ Success state */}
             {!uploading && uploadedUrl && (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
@@ -2271,7 +2333,6 @@ function Checkout() {
               </div>
             )}
 
-            {/* ✅ Error state */}
             {!uploading && uploadError && (
               <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
                 <AlertCircle
@@ -3702,7 +3763,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products                                                */
+/* Admin Products — with discount control                       */
 /* ============================================================ */
 function AdminProducts() {
   const [items, setItems] = useState([]);
@@ -3716,6 +3777,7 @@ function AdminProducts() {
     title: "",
     price: "",
     compareAtPrice: "",
+    discountPercent: "",
     category: "Oversized T-shirt",
     description: "",
     sizes: "M, L, XL, XXL",
@@ -3753,6 +3815,7 @@ function AdminProducts() {
       title: p.title || "",
       price: String(p.price ?? ""),
       compareAtPrice: String(p.compareAtPrice ?? ""),
+      discountPercent: String(p.discountPercent ?? ""),
       category: p.category || "",
       description: p.description || "",
       sizes: (p.sizes || []).join(", "),
@@ -3768,6 +3831,32 @@ function AdminProducts() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // ✅ Auto-calculated discount preview from price + compareAtPrice
+  const previewDiscount = useMemo(() => {
+    const price = Number(f.price) || 0;
+    const compare = Number(f.compareAtPrice) || 0;
+    const custom = Number(f.discountPercent) || 0;
+
+    if (custom > 0 && custom < 100) {
+      const original = Math.round(price / (1 - custom / 100));
+      return {
+        percent: Math.round(custom),
+        original: Math.max(original, price),
+        source: "custom",
+      };
+    }
+
+    if (compare > price && price > 0) {
+      return {
+        percent: Math.round((1 - price / compare) * 100),
+        original: compare,
+        source: "auto",
+      };
+    }
+
+    return { percent: 0, original: 0, source: "none" };
+  }, [f.price, f.compareAtPrice, f.discountPercent]);
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -3780,7 +3869,7 @@ function AdminProducts() {
 
       if (files.length > 0) {
         const base64List = await Promise.all(
-          files.map((file) => fileData(file)),
+          files.map((file) => fileData(file, 1000, 0.8)),
         );
 
         const { imageUrls: uploaded } = await api("/uploads/images", {
@@ -3795,6 +3884,7 @@ function AdminProducts() {
         title: f.title,
         price: Number(f.price),
         compareAtPrice: Number(f.compareAtPrice || 0),
+        discountPercent: Number(f.discountPercent || 0),
         category: f.category,
         description: f.description,
         stock: Number(f.stock || 0),
@@ -3871,7 +3961,8 @@ function AdminProducts() {
           {[
             ["title", "Title"],
             ["price", "Price (৳)"],
-            ["compareAtPrice", "Compare-at price"],
+            ["compareAtPrice", "Compare-at price (original)"],
+            ["discountPercent", "Discount % (auto or custom)"],
             ["category", "Category"],
             ["stock", "Stock"],
             ["sku", "SKU"],
@@ -3887,12 +3978,22 @@ function AdminProducts() {
               <input
                 value={f[k]}
                 type={
-                  ["price", "compareAtPrice", "stock"].includes(k)
+                  [
+                    "price",
+                    "compareAtPrice",
+                    "stock",
+                    "discountPercent",
+                  ].includes(k)
                     ? "number"
                     : "text"
                 }
                 onChange={(e) => setF({ ...f, [k]: e.target.value })}
                 required={["title", "price"].includes(k)}
+                placeholder={
+                  k === "discountPercent"
+                    ? "Leave empty to auto-calc"
+                    : undefined
+                }
               />
             </label>
           ))}
@@ -3904,6 +4005,37 @@ function AdminProducts() {
               onChange={(e) => setF({ ...f, description: e.target.value })}
             />
           </label>
+
+          {/* ✅ Discount preview box */}
+          <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
+            <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
+              <Tag size={12} /> Discount preview
+            </div>
+
+            {previewDiscount.percent > 0 ? (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-1 rounded-full bg-orange-600 px-3 py-1 text-xs font-extrabold text-white">
+                  <Percent size={11} /> {previewDiscount.percent}% off
+                </span>
+                <span className="text-xs font-semibold text-neutral-700">
+                  {money(f.price)}{" "}
+                  <del className="text-neutral-400">
+                    {money(previewDiscount.original)}
+                  </del>
+                </span>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-orange-600 ring-1 ring-orange-200">
+                  {previewDiscount.source === "custom"
+                    ? "Manual override"
+                    : "Auto-calculated"}
+                </span>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-neutral-500">
+                Enter a compare-at price higher than the sale price to auto-show
+                a discount badge, or set a custom % manually.
+              </p>
+            )}
+          </div>
 
           <label className="span">
             Upload images (multiple, 5 MB each max)
@@ -3950,62 +4082,78 @@ function AdminProducts() {
         <div className="box">
           <h2>All products ({items.length})</h2>
 
-          {items.map((p) => (
-            <div className="adminrow" key={p._id}>
-              <img src={p.images?.[0] || "https://placehold.co/80x90"} alt="" />
+          {items.map((p) => {
+            const discount = getDiscountInfo(p);
 
-              <div>
-                <b>{p.title}</b>
-                <small>
-                  {money(p.price)} · {p.category} ·{" "}
-                  {Number(p.stock || 0) <= 0 ? (
-                    <span className="font-bold text-red-600">STOCK OUT</span>
-                  ) : (
-                    <>Stock {p.stock}</>
-                  )}
-                  {p.images?.length > 1 && (
-                    <>
-                      {" "}
-                      · <ImageIcon size={11} className="inline" />{" "}
-                      {p.images.length} images
-                    </>
-                  )}
-                </small>
+            return (
+              <div className="adminrow" key={p._id}>
+                <img
+                  src={p.images?.[0] || "https://placehold.co/80x90"}
+                  alt=""
+                />
+
+                <div>
+                  <b>{p.title}</b>
+                  <small>
+                    {money(p.price)} · {p.category} ·{" "}
+                    {Number(p.stock || 0) <= 0 ? (
+                      <span className="font-bold text-red-600">STOCK OUT</span>
+                    ) : (
+                      <>Stock {p.stock}</>
+                    )}
+                    {discount.percent > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-bold text-orange-600">
+                          {discount.percent}% off
+                        </span>
+                      </>
+                    )}
+                    {p.images?.length > 1 && (
+                      <>
+                        {" "}
+                        · <ImageIcon size={11} className="inline" />{" "}
+                        {p.images.length} images
+                      </>
+                    )}
+                  </small>
+                </div>
+
+                <button
+                  className="btn outline"
+                  onClick={() => startEdit(p)}
+                  type="button"
+                >
+                  <Pencil size={14} /> Edit
+                </button>
+
+                <button
+                  className="remove"
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm("Delete " + p.title + "?")) return;
+
+                    try {
+                      await api("/admin/products/" + p._id, {
+                        method: "DELETE",
+                      });
+
+                      await refresh();
+
+                      if (editingId === p._id) resetForm();
+
+                      msg("Product deleted");
+                    } catch (e) {
+                      msg(e.message, "error");
+                    }
+                  }}
+                >
+                  <Trash2 /> Delete
+                </button>
               </div>
-
-              <button
-                className="btn outline"
-                onClick={() => startEdit(p)}
-                type="button"
-              >
-                <Pencil size={14} /> Edit
-              </button>
-
-              <button
-                className="remove"
-                type="button"
-                onClick={async () => {
-                  if (!confirm("Delete " + p.title + "?")) return;
-
-                  try {
-                    await api("/admin/products/" + p._id, {
-                      method: "DELETE",
-                    });
-
-                    await refresh();
-
-                    if (editingId === p._id) resetForm();
-
-                    msg("Product deleted");
-                  } catch (e) {
-                    msg(e.message, "error");
-                  }
-                }}
-              >
-                <Trash2 /> Delete
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
@@ -4052,7 +4200,7 @@ function AdminBanners() {
           await api("/uploads/image", {
             method: "POST",
             body: JSON.stringify({
-              imageData: await fileData(file),
+              imageData: await fileData(file, 1600, 0.75),
             }),
           })
         ).imageUrl;
