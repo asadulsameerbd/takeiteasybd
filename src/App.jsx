@@ -50,6 +50,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
 import { api, apiFetch, fileData } from "./api";
 import { useAuth } from "./context/AuthContext";
+import { broadcastOrderChange, orderChannel } from "./lib/orderChannel";
 import logo from "./assets/logo.jpeg";
 import logobgl from "./assets/logobgl.png";
 
@@ -73,7 +74,6 @@ const msg = (title, icon = "success") =>
 /* ============================================================ */
 const orderKeys = {
   all: ["orders"],
-  // ✅ String(userId) — "id" আর "_id" দুইটাই কাজ করবে
   mine: (userId) => ["orders", "mine", userId ? String(userId) : "guest"],
   adminList: ["admin-orders"],
   newOrders: ["new-orders"],
@@ -2106,6 +2106,12 @@ function Checkout() {
         }),
       ]);
 
+      // ✅ cross-tab broadcast — user-এর profile tab, admin-এর tab সবাই instant refetch করবে
+      broadcastOrderChange("created", {
+        orderNumber: r.orderNumber,
+        userId: userId ? String(userId) : null,
+      });
+
       await Swal.fire({
         icon: "success",
         title: "Order placed!",
@@ -3148,7 +3154,6 @@ function Login() {
     try {
       await customerLogin(f);
 
-      // ✅ পুরানো user-এর orders cache মুছে ফেলো, তারপর সব refetch
       queryClient.removeQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({
         queryKey: ["orders"],
@@ -3222,7 +3227,6 @@ function Register() {
     try {
       await registerCustomer(f);
 
-      // ✅ নতুন account — পুরানো cache মুছে নতুন করে fetch
       queryClient.removeQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({
         queryKey: ["orders"],
@@ -3273,13 +3277,12 @@ function Register() {
 }
 
 /* ============================================================ */
-/* ✅ Customer Profile — TanStack Query দিয়ে orders              */
+/* ✅ Customer Profile — TanStack Query + BroadcastChannel sync  */
 /* ============================================================ */
 function Profile() {
   const { customer, updateProfile, logoutCustomer } = useAuth();
   const queryClient = useQueryClient();
 
-  // ✅ AuthContext এখন id দেয়, _id fallback
   const userId = customer?.user?.id || customer?.user?._id;
 
   const [f, setF] = useState({
@@ -3312,7 +3315,28 @@ function Profile() {
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
+    // ✅ ৩০ সেকেন্ডে auto refresh — আলাদা device থেকেও admin update দেখতে পাবে
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
+
+  // ✅ Cross-tab BroadcastChannel listener
+  // Admin অন্য tab-এ order status change করলে বা user অন্য tab-এ order দিলে
+  // এই tab instant refetch করবে
+  useEffect(() => {
+    if (!orderChannel || !customer?.token) return;
+
+    const handler = () => {
+      queryClient.invalidateQueries({
+        queryKey: orderKeys.mine(userId),
+        refetchType: "all",
+      });
+      refetchOrders();
+    };
+
+    orderChannel.addEventListener("message", handler);
+    return () => orderChannel.removeEventListener("message", handler);
+  }, [customer?.token, userId, queryClient, refetchOrders]);
 
   const orderError = orderQueryError?.message || "";
 
@@ -3336,7 +3360,6 @@ function Profile() {
   }
 
   function handleLogout() {
-    // ✅ order cache পুরোপুরি মুছে দাও
     queryClient.removeQueries({ queryKey: ["orders"] });
     logoutCustomer();
   }
@@ -4599,6 +4622,12 @@ function NewOrders() {
           refetchType: "all",
         }),
       ]);
+
+      // ✅ Cross-tab broadcast — user-এর profile tab instant refetch করবে
+      broadcastOrderChange("status-changed", {
+        orderId: id,
+        status: nextStatus,
+      });
     } catch (e) {
       msg(e.message, "error");
     }
@@ -4910,6 +4939,9 @@ function AdminOrders() {
           refetchType: "all",
         }),
       ]);
+
+      // ✅ Cross-tab broadcast — user-এর profile tab instant refetch করবে
+      broadcastOrderChange("status-changed", { orderId: id, patch });
     } catch (e) {
       msg(e.message, "error");
     }

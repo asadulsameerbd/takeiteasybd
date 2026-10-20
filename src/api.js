@@ -32,6 +32,7 @@ export async function api(path, options = {}) {
     auth = true,
     headers: extraHeaders = {},
   } = options;
+
   const safePath = path.startsWith("/") ? path : `/${path}`;
   const headers = { "Content-Type": "application/json", ...extraHeaders };
 
@@ -40,7 +41,13 @@ export async function api(path, options = {}) {
     if (authData?.token) headers.Authorization = `Bearer ${authData.token}`;
   }
 
-  const res = await fetch(`${API_BASE}${safePath}`, { method, headers, body });
+  const res = await fetch(`${API_BASE}${safePath}`, {
+    method,
+    headers,
+    body,
+    cache: "no-store",
+  });
+
   const text = await res.text();
   let data = null;
   try {
@@ -60,7 +67,10 @@ export async function apiFetch(path) {
   if (authData?.token) headers.Authorization = `Bearer ${authData.token}`;
 
   const safePath = path.startsWith("/") ? path : `/${path}`;
-  const res = await fetch(`${API_BASE}${safePath}`, { headers });
+  const res = await fetch(`${API_BASE}${safePath}`, {
+    headers,
+    cache: "no-store",
+  });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
