@@ -1,7 +1,8 @@
 // api.js
 
-const API_BASE =
-  import.meta.env.VITE_API_URL || "https://takeiteasybd.vercel.app/api";
+const API_BASE = (
+  import.meta.env.VITE_API_URL || "https://takeiteasybd.vercel.app/api"
+).replace(/\/+$/, ""); // ✅ trailing slash remove
 
 function getToken() {
   try {
@@ -21,6 +22,9 @@ export async function api(path, options = {}) {
     headers: extraHeaders = {},
   } = options;
 
+  // ✅ Ensure path always starts with single slash
+  const safePath = path.startsWith("/") ? path : `/${path}`;
+
   const headers = {
     "Content-Type": "application/json",
     ...extraHeaders,
@@ -38,7 +42,7 @@ export async function api(path, options = {}) {
     }
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${API_BASE}${safePath}`, {
     method,
     headers,
     body,
@@ -62,11 +66,6 @@ export async function api(path, options = {}) {
 
 /**
  * ✅ Image file → base64 string with automatic compression
- *
- * @param {File} file - the image file
- * @param {number} maxWidth - maximum width in pixels (default 1600)
- * @param {number} quality - JPEG quality 0-1 (default 0.8)
- * @returns {Promise<string>} base64 string (without data:... prefix)
  */
 export async function fileData(file, maxWidth = 1600, quality = 0.8) {
   if (!file) throw new Error("No file provided.");
@@ -85,7 +84,6 @@ export async function fileData(file, maxWidth = 1600, quality = 0.8) {
         try {
           let { width, height } = img;
 
-          // Resize if wider than maxWidth
           if (width > maxWidth) {
             height = Math.round((height * maxWidth) / width);
             width = maxWidth;
