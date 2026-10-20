@@ -3656,8 +3656,18 @@ function AdminNav() {
 
   useEffect(() => {
     let cancelled = false;
+    let es = null;
+    let reconnectTimer = null;
 
-    async function fetchNewCount() {
+    // API base URL (same as api.js)
+    const API_BASE = (
+      import.meta.env.VITE_API_URL ||
+      "https://take-it-easy-bd-server.vercel.app/api"
+    ).replace(/\/+$/, "");
+
+    const STREAM_URL = `${API_BASE}/admin/orders/stream`;
+
+    async function fetchCount() {
       try {
         const data = await api("/admin/orders/new");
         if (!cancelled) setNewCount(Array.isArray(data) ? data.length : 0);
@@ -3666,12 +3676,58 @@ function AdminNav() {
       }
     }
 
-    fetchNewCount();
-    const id = setInterval(fetchNewCount, 30000);
+    // Initial count
+    fetchCount();
+
+    // ✅ SSE connection for live updates
+    function connectSSE() {
+      if (cancelled) return;
+
+      try {
+        es = new EventSource(STREAM_URL);
+
+        es.addEventListener("connected", () => {
+          // connection established
+          fetchCount();
+        });
+
+        es.addEventListener("new-order", () => {
+          // ✅ New order aaishe — count refresh
+          fetchCount();
+        });
+
+        es.addEventListener("order-updated", () => {
+          // ✅ Order status change — count refresh
+          fetchCount();
+        });
+
+        es.onerror = () => {
+          // Auto-reconnect after 3s
+          if (es) es.close();
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectSSE, 3000);
+        };
+      } catch {
+        // Browser e EventSource support na thakle polling fallback
+        const id = setInterval(fetchCount, 30000);
+        return () => clearInterval(id);
+      }
+    }
+
+    connectSSE();
+
+    // Fallback polling (jodi SSE fail hoy)
+    const pollId = setInterval(() => {
+      if (!es || es.readyState === EventSource.CLOSED) {
+        fetchCount();
+      }
+    }, 30000);
 
     return () => {
       cancelled = true;
-      clearInterval(id);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) es.close();
+      clearInterval(pollId);
     };
   }, []);
 
@@ -4479,9 +4535,62 @@ function NewOrders() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    let es = null;
+    let reconnectTimer = null;
+
+    const API_BASE = (
+      import.meta.env.VITE_API_URL ||
+      "https://take-it-easy-bd-server.vercel.app/api"
+    ).replace(/\/+$/, "");
+
+    const STREAM_URL = `${API_BASE}/admin/orders/stream`;
+
     refresh();
-    const id = setInterval(() => refresh(), 30000);
-    return () => clearInterval(id);
+
+    function connectSSE() {
+      if (cancelled) return;
+
+      try {
+        es = new EventSource(STREAM_URL);
+
+        es.addEventListener("connected", () => {
+          refresh();
+        });
+
+        es.addEventListener("new-order", () => {
+          refresh();
+        });
+
+        es.addEventListener("order-updated", () => {
+          refresh();
+        });
+
+        es.onerror = () => {
+          if (es) es.close();
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectSSE, 3000);
+        };
+      } catch {
+        const id = setInterval(() => refresh(), 30000);
+        return () => clearInterval(id);
+      }
+    }
+
+    connectSSE();
+
+    const pollId = setInterval(() => {
+      if (!es || es.readyState === EventSource.CLOSED) {
+        refresh();
+      }
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) es.close();
+      clearInterval(pollId);
+    };
   }, []);
 
   async function processOrder(id, nextStatus) {
