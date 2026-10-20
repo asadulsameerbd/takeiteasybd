@@ -485,10 +485,8 @@ function Heading({ tag, title, desc }) {
 }
 
 /* ============================================================ */
-/* Home Page — with Loader                                      */
 /* ============================================================ */
-/* ============================================================ */
-/* Home Page — with Loader (products + banner image)            */
+/* Home Page — with Loader (products + banner image) + Stock filter */
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
@@ -498,7 +496,6 @@ function Home() {
   const [visible, setVisible] = useState(8);
   const [loading, setLoading] = useState(true);
 
-  // ✅ banner image load state
   const [bannerImageLoaded, setBannerImageLoaded] = useState(false);
 
   const sentinel = React.useRef(null);
@@ -547,9 +544,11 @@ function Home() {
     return () => observer.disconnect();
   }, [visible, products.length]);
 
+  // ✅ Only in-stock products shown on Home
+  const inStockProducts = products.filter((p) => Number(p.stock || 0) > 0);
+
   const b = banners[slide];
 
-  // ✅ slide change hole banner image abar loading state e jabe
   useEffect(() => {
     setBannerImageLoaded(false);
   }, [slide]);
@@ -570,14 +569,12 @@ function Home() {
                 }
           }
         >
-          {/* ✅ Banner image loading spinner overlay */}
           {b && !bannerImageLoaded && (
             <div className="absolute inset-0 z-10 flex items-center justify-center">
               <Loader text="Loading banner" />
             </div>
           )}
 
-          {/* ✅ Hidden image tag to detect load */}
           {b?.imageUrl && (
             <img
               src={b.imageUrl}
@@ -637,24 +634,23 @@ function Home() {
 
         {loading ? (
           <Loader text="Fetching the good stuff" />
-        ) : products.length ? (
+        ) : inStockProducts.length ? (
           <>
             <div className="grid">
-              {products.slice(0, visible).map((p) => (
+              {inStockProducts.slice(0, visible).map((p) => (
                 <Card key={p._id} p={p} add={add} />
               ))}
             </div>
 
             <div ref={sentinel} className="scrollsentinel" aria-hidden="true" />
 
-            {visible < products.length && (
+            {visible < inStockProducts.length && (
               <p className="loadmore">Loading more pieces…</p>
             )}
           </>
         ) : (
           <div className="empty">
-            Demo products are being prepared. Start the server and connect
-            MongoDB to load the collection.
+            No products are currently in stock. Please check back soon.
           </div>
         )}
       </section>
