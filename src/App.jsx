@@ -44,6 +44,7 @@ import {
   Check,
   Tag,
   Percent,
+  Bell,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { api, fileData } from "./api";
@@ -371,7 +372,6 @@ function getDiscountInfo(p) {
   const compare = Number(p.compareAtPrice) || 0;
   const custom = Number(p.discountPercent) || 0;
 
-  // ✅ Custom percent (admin set) takes priority
   if (custom > 0 && custom < 100) {
     const original = Math.round(price / (1 - custom / 100));
     return {
@@ -381,7 +381,6 @@ function getDiscountInfo(p) {
     };
   }
 
-  // ✅ Auto-calculate from compareAtPrice
   if (compare > price && price > 0) {
     const percent = Math.round((1 - price / compare) * 100);
     return { percent, original: compare, source: "auto" };
@@ -391,7 +390,7 @@ function getDiscountInfo(p) {
 }
 
 /* ============================================================ */
-/* Product Card — Stock Out auto display                        */
+/* Product Card                                                 */
 /* ============================================================ */
 function Card({ p, add }) {
   const isOutOfStock = Number(p.stock || 0) <= 0;
@@ -515,7 +514,7 @@ function Heading({ tag, title, desc }) {
 }
 
 /* ============================================================ */
-/* Home Page                                                    */
+/* Home Page — with smooth banner dots                          */
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
@@ -574,7 +573,6 @@ function Home() {
     return () => observer.disconnect();
   }, [visible, products.length]);
 
-  // ✅ Smooth transition between banners
   function goToSlide(nextIndex) {
     if (nextIndex === slide) return;
 
@@ -600,7 +598,6 @@ function Home() {
 
   const b = banners[slide];
 
-  // ✅ Text fields only render if admin actually provided them
   const hasTitle = Boolean(b?.title && b.title.trim());
   const hasSubtitle = Boolean(b?.subtitle && b.subtitle.trim());
   const hasEyebrow = Boolean(b?.eyebrow && b.eyebrow.trim());
@@ -622,14 +619,12 @@ function Home() {
                 }
           }
         >
-          {/* ✅ Smooth fade overlay during transition */}
           <div
             className={`pointer-events-none absolute inset-0 z-[5] bg-black transition-opacity duration-500 ${
               bannerFading ? "opacity-60" : "opacity-0"
             }`}
           />
 
-          {/* ✅ Scale + fade-in animation on banner content */}
           <div
             className={`herotext relative z-20 transition-all duration-700 ease-out ${
               bannerFading
@@ -637,16 +632,10 @@ function Home() {
                 : "translate-y-0 opacity-100"
             }`}
           >
-            {/* ✅ Only show eyebrow if admin provided it */}
             {hasEyebrow && <span className="eyebrow">{b.eyebrow}</span>}
-
-            {/* ✅ Only show title if admin provided it */}
             {hasTitle && <h1>{b.title}</h1>}
-
-            {/* ✅ Only show subtitle if admin provided it */}
             {hasSubtitle && <p>{b.subtitle}</p>}
 
-            {/* ✅ Button always shows (admin can customize text/link) */}
             <Link className="btn orange" to={b?.buttonLink || "/products"}>
               {hasButtonText ? b.buttonText : "Shop collection"}{" "}
               <ArrowUpRight />
@@ -672,23 +661,47 @@ function Home() {
           )}
 
           {banners.length > 1 && (
-            <div className="slides relative z-30">
-              <button
-                aria-label="Previous banner"
-                onClick={() =>
-                  goToSlide((slide + banners.length - 1) % banners.length)
-                }
-              >
-                ‹
-              </button>
-              {slide + 1} / {banners.length}
-              <button
-                aria-label="Next banner"
-                onClick={() => goToSlide((slide + 1) % banners.length)}
-              >
-                ›
-              </button>
-            </div>
+            <>
+              {/* ✅ Arrow buttons */}
+              <div className="slides relative z-30">
+                <button
+                  aria-label="Previous banner"
+                  onClick={() =>
+                    goToSlide((slide + banners.length - 1) % banners.length)
+                  }
+                >
+                  ‹
+                </button>
+                <button
+                  aria-label="Next banner"
+                  onClick={() => goToSlide((slide + 1) % banners.length)}
+                >
+                  ›
+                </button>
+              </div>
+
+              {/* ✅ Unique dot pagination — active dot is a pill */}
+              <div className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 sm:bottom-6">
+                {banners.map((_, i) => {
+                  const isActive = i === slide;
+
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => goToSlide(i)}
+                      aria-label={`Go to banner ${i + 1}`}
+                      aria-current={isActive ? "true" : undefined}
+                      className={`h-2 rounded-full transition-all duration-500 ease-out ${
+                        isActive
+                          ? "w-8 bg-white shadow-md"
+                          : "w-2 bg-white/50 hover:bg-white/80"
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </section>
@@ -3634,9 +3647,33 @@ function AdminLogin() {
   );
 }
 
-/* Admin Navigation */
+/* ============================================================ */
+/* Admin Navigation — with New Orders badge                     */
+/* ============================================================ */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
+  const [newCount, setNewCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchNewCount() {
+      try {
+        const data = await api("/admin/orders/new");
+        if (!cancelled) setNewCount(Array.isArray(data) ? data.length : 0);
+      } catch {
+        // silent fail
+      }
+    }
+
+    fetchNewCount();
+    const id = setInterval(fetchNewCount, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   return (
     <aside className="adminnav">
@@ -3646,6 +3683,19 @@ function AdminNav() {
       </Link>
 
       <Link to="/admin">Overview</Link>
+
+      <Link to="/admin/new-orders" className="relative">
+        <span className="flex items-center gap-2">
+          <Bell size={14} />
+          New Orders
+          {newCount > 0 && (
+            <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-black text-white">
+              {newCount > 99 ? "99+" : newCount}
+            </span>
+          )}
+        </span>
+      </Link>
+
       <Link to="/admin/products">Products</Link>
       <Link to="/admin/banners">Banners</Link>
       <Link to="/admin/orders">Orders</Link>
@@ -3763,7 +3813,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products — with discount control                       */
+/* Admin Products                                               */
 /* ============================================================ */
 function AdminProducts() {
   const [items, setItems] = useState([]);
@@ -3831,7 +3881,6 @@ function AdminProducts() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // ✅ Auto-calculated discount preview from price + compareAtPrice
   const previewDiscount = useMemo(() => {
     const price = Number(f.price) || 0;
     const compare = Number(f.compareAtPrice) || 0;
@@ -4006,7 +4055,6 @@ function AdminProducts() {
             />
           </label>
 
-          {/* ✅ Discount preview box */}
           <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
             <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
               <Tag size={12} /> Discount preview
@@ -4407,7 +4455,235 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* Admin Orders                                                  */
+/* New Orders — notification page                               */
+/* ============================================================ */
+function NewOrders() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  async function refresh(showSpinner = false) {
+    if (showSpinner) setRefreshing(true);
+
+    try {
+      const data = await api("/admin/orders/new");
+      setItems(Array.isArray(data) ? data : []);
+      setError("");
+    } catch (e) {
+      setError(e.message || "Failed to load new orders.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(() => refresh(), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function processOrder(id, nextStatus) {
+    try {
+      await api("/admin/orders/" + id, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      msg(`Order marked as ${nextStatus}`);
+      await refresh();
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+
+  return (
+    <section className="adminmain">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-red-600">
+            NOTIFICATIONS
+          </span>
+          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-900 sm:text-4xl">
+            New Orders
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            New orders waiting to be processed. Process/cancel and they'll move
+            to the Orders page.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => refresh(true)}
+          disabled={refreshing}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
+        >
+          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-2xl border border-neutral-200 bg-white">
+          <Loader text="Loading new orders" />
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
+            <CheckCircle2 size={26} />
+          </div>
+          <h3 className="mt-4 text-lg font-extrabold text-neutral-900">
+            All caught up!
+          </h3>
+          <p className="mt-1 text-sm text-neutral-500">
+            No new orders waiting. New orders will appear here automatically.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((o) => (
+            <article
+              key={o._id}
+              className="overflow-hidden rounded-2xl border-2 border-red-200 bg-white shadow-md ring-1 ring-red-100"
+            >
+              <div className="flex flex-col gap-3 border-b border-red-100 bg-red-50/60 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white shadow-sm">
+                    <Clock size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-neutral-500 sm:text-sm">
+                        {o.orderNumber}
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-700 ring-1 ring-red-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                        NEW
+                      </span>
+                      {o.paymentStatus !== "not_required" && (
+                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 ring-1 ring-amber-200">
+                          {o.paymentStatus.replaceAll("_", " ")}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 truncate text-sm font-extrabold text-neutral-900 sm:text-base">
+                      {o.customerName}
+                    </p>
+                    {o.createdAt && (
+                      <p className="text-xs text-neutral-400">
+                        {new Date(o.createdAt).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                      Total
+                    </p>
+                    <p className="text-lg font-black text-neutral-900 tabular-nums">
+                      {money(o.total)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                      Customer
+                    </p>
+                    <p className="flex items-center gap-2 text-sm text-neutral-700">
+                      <Phone size={13} className="shrink-0 text-neutral-400" />
+                      <a
+                        href={`tel:${o.phone}`}
+                        className="font-mono hover:text-orange-600"
+                      >
+                        {o.phone}
+                      </a>
+                    </p>
+                    {(o.address || o.city) && (
+                      <p className="mt-1 flex items-start gap-2 text-sm text-neutral-700">
+                        <MapPin
+                          size={13}
+                          className="mt-0.5 shrink-0 text-neutral-400"
+                        />
+                        <span>
+                          {o.address}
+                          {o.city ? `, ${o.city}` : ""}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                      Items ({o.items?.length || 0})
+                    </p>
+                    <p className="text-sm text-neutral-600">
+                      {(o.items || [])
+                        .map((i) => `${i.title} ×${i.quantity}`)
+                        .join(", ")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => processOrder(o._id, "confirmed")}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-700"
+                  >
+                    <CheckCircle2 size={14} /> Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => processOrder(o._id, "processing")}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-violet-700"
+                  >
+                    <Package size={14} /> Process
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => processOrder(o._id, "shipped")}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-700"
+                  >
+                    <Truck size={14} /> Ship
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => processOrder(o._id, "cancelled")}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700"
+                  >
+                    <XCircle size={14} /> Cancel
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ============================================================ */
+/* Admin Orders                                                 */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -5136,6 +5412,7 @@ export default function App() {
         <Route element={<AdminGuard />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
+            <Route path="new-orders" element={<NewOrders />} />
             <Route path="products" element={<AdminProducts />} />
             <Route path="banners" element={<AdminBanners />} />
             <Route path="orders" element={<AdminOrders />} />
