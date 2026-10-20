@@ -38,6 +38,9 @@ import {
   CreditCard,
   ChevronDown,
   ChevronUp,
+  TrendingUp,
+  Wallet,
+  AlertCircle,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { api, fileData } from "./api";
@@ -485,8 +488,7 @@ function Heading({ tag, title, desc }) {
 }
 
 /* ============================================================ */
-/* ============================================================ */
-/* Home Page — with Loader (products + banner image) + Stock filter */
+/* Home Page                                                    */
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
@@ -544,7 +546,6 @@ function Home() {
     return () => observer.disconnect();
   }, [visible, products.length]);
 
-  // ✅ Only in-stock products shown on Home
   const inStockProducts = products.filter((p) => Number(p.stock || 0) > 0);
 
   const b = banners[slide];
@@ -657,8 +658,9 @@ function Home() {
     </main>
   );
 }
+
 /* ============================================================ */
-/* Products Page — with Loader                                  */
+/* Products Page                                                */
 /* ============================================================ */
 function Products() {
   const { add } = useContext(C);
@@ -1140,7 +1142,7 @@ function FilterBox({
 }
 
 /* ============================================================ */
-/* Product Details — with Loader + Stock Out                    */
+/* Product Details                                              */
 /* ============================================================ */
 function Product() {
   const { slug } = useParams();
@@ -2813,7 +2815,7 @@ function Contact() {
                   d="M4 5a2 2 0 0 1 2-2h2.3a1 1 0 0 1 .95.68l1.1 3.3a1 1 0 0 1-.48 1.2l-1.7.94a11 11 0 0 0 4.7 4.7l.94-1.7a1 1 0 0 1 1.2-.48l3.3 1.1a1 1 0 0 1 .69.95V16a2 2 0 0 1-2 2h-1C9.93 18 4 12.07 4 5.9V5Z"
                 />
               </svg>
-              01933200699
+              01933200699{" "}
             </a>
           </div>
         </div>
@@ -3338,10 +3340,14 @@ function Profile() {
   );
 }
 
-/* Admin Login */
+/* ============================================================ */
+/* Admin Login — with clear error messages                      */
+/* ============================================================ */
 function AdminLogin() {
   const { adminToken, loginAdmin } = useAuth();
   const [f, setF] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   if (adminToken) {
     return <Navigate to="/admin" />;
@@ -3349,12 +3355,28 @@ function AdminLogin() {
 
   async function submit(e) {
     e.preventDefault();
+    setError("");
+    setBusy(true);
 
     try {
       await loginAdmin(f);
       location.href = "/admin";
     } catch (e) {
-      msg(e.message, "error");
+      const message =
+        e?.message && !/invalid|credential|login/i.test(e.message)
+          ? e.message
+          : "Invalid admin credentials. Please check your email and password.";
+
+      setError(message);
+
+      Swal.fire({
+        icon: "error",
+        title: "Login failed",
+        text: message,
+        confirmButtonColor: "#F54900",
+      });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -3368,12 +3390,26 @@ function AdminLogin() {
 
         <h1>Admin login.</h1>
 
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700"
+          >
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <label>
           Email
           <input
             type="email"
             value={f.email}
-            onChange={(e) => setF({ ...f, email: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, email: e.target.value });
+              setError("");
+            }}
+            autoComplete="username"
           />
         </label>
 
@@ -3382,11 +3418,23 @@ function AdminLogin() {
           <input
             type="password"
             value={f.password}
-            onChange={(e) => setF({ ...f, password: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, password: e.target.value });
+              setError("");
+            }}
+            autoComplete="current-password"
           />
         </label>
 
-        <button className="btn orange wide">Log in</button>
+        <button className="btn orange wide" disabled={busy}>
+          {busy ? (
+            <>
+              <InlineLoader /> Logging in...
+            </>
+          ) : (
+            "Log in"
+          )}
+        </button>
       </form>
     </main>
   );
@@ -3521,7 +3569,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products — EDIT + MULTIPLE IMAGE UPLOAD                */
+/* Admin Products                                                */
 /* ============================================================ */
 function AdminProducts() {
   const [items, setItems] = useState([]);
@@ -3831,11 +3879,14 @@ function AdminProducts() {
   );
 }
 
-/* Admin Banners */
+/* ============================================================ */
+/* Admin Banners — image-only upload allowed                    */
+/* ============================================================ */
 function AdminBanners() {
   const [items, setItems] = useState([]);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
 
   const [f, setF] = useState({
     title: "",
@@ -3858,10 +3909,12 @@ function AdminBanners() {
 
   async function submit(e) {
     e.preventDefault();
+    setBusy(true);
 
     try {
-      let imageUrl = f.imageUrl;
+      let imageUrl = f.imageUrl.trim();
 
+      // ✅ Upload file if provided (takes priority)
       if (file) {
         imageUrl = (
           await api("/uploads/image", {
@@ -3873,26 +3926,40 @@ function AdminBanners() {
         ).imageUrl;
       }
 
+      // ✅ Only image is required — title/subtitle are optional
       if (!imageUrl) {
-        throw new Error("Choose an image or enter an image URL.");
+        throw new Error("Please upload an image or paste an image URL.");
       }
 
       await api("/admin/banners", {
         method: "POST",
         body: JSON.stringify({
-          ...f,
+          title: f.title.trim(),
+          subtitle: f.subtitle.trim(),
           imageUrl,
-          sortOrder: Number(f.sortOrder),
+          buttonText: f.buttonText.trim() || "Shop collection",
+          buttonLink: f.buttonLink.trim() || "/products",
+          sortOrder: Number(f.sortOrder || 0),
+          active: true,
         }),
       });
 
-      setF({ ...f, title: "", subtitle: "", imageUrl: "" });
+      setF({
+        title: "",
+        subtitle: "",
+        imageUrl: "",
+        buttonText: "Shop collection",
+        buttonLink: "/products",
+        sortOrder: "0",
+      });
       setFile(null);
 
       await refresh();
       msg("Banner added");
     } catch (e) {
       msg(e.message, "error");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -3901,42 +3968,91 @@ function AdminBanners() {
       <Heading
         tag="HOMEPAGE EDITOR"
         title="Banners."
-        desc="Manage the homepage carousel images."
+        desc="Manage the homepage carousel images. Only an image is required — heading and subheading are optional."
       />
 
       <form className="box stack" onSubmit={submit}>
         <h2>Add banner</h2>
 
         <div className="formgrid">
-          {[
-            ["title", "Headline"],
-            ["subtitle", "Subheading"],
-            ["buttonText", "Button text"],
-            ["buttonLink", "Button link"],
-            ["sortOrder", "Sort order"],
-            ["imageUrl", "Image URL"],
-          ].map(([k, l]) => (
-            <label key={k}>
-              {l}
-              <input
-                value={f[k]}
-                onChange={(e) => setF({ ...f, [k]: e.target.value })}
-              />
-            </label>
-          ))}
-
-          <label>
-            Upload image
+          <label className="span">
+            Upload banner image <span className="text-orange-600">*</span>
             <input
               type="file"
               accept="image/*"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
+            {file && <small className="text-green-600">✓ {file.name}</small>}
+          </label>
+
+          <label className="span">
+            Or paste image URL{" "}
+            <span className="font-normal text-neutral-400">
+              (optional if file uploaded)
+            </span>
+            <input
+              value={f.imageUrl}
+              onChange={(e) => setF({ ...f, imageUrl: e.target.value })}
+              placeholder="https://example.com/banner.jpg"
+            />
+          </label>
+
+          <label>
+            Headline{" "}
+            <span className="font-normal text-neutral-400">(optional)</span>
+            <input
+              value={f.title}
+              onChange={(e) => setF({ ...f, title: e.target.value })}
+              placeholder="Leave empty to use default"
+            />
+          </label>
+
+          <label>
+            Subheading{" "}
+            <span className="font-normal text-neutral-400">(optional)</span>
+            <input
+              value={f.subtitle}
+              onChange={(e) => setF({ ...f, subtitle: e.target.value })}
+              placeholder="Leave empty to use default"
+            />
+          </label>
+
+          <label>
+            Button text
+            <input
+              value={f.buttonText}
+              onChange={(e) => setF({ ...f, buttonText: e.target.value })}
+            />
+          </label>
+
+          <label>
+            Button link
+            <input
+              value={f.buttonLink}
+              onChange={(e) => setF({ ...f, buttonLink: e.target.value })}
+            />
+          </label>
+
+          <label>
+            Sort order
+            <input
+              type="number"
+              value={f.sortOrder}
+              onChange={(e) => setF({ ...f, sortOrder: e.target.value })}
+            />
           </label>
         </div>
 
-        <button className="btn orange">
-          Add banner <Plus />
+        <button className="btn orange" disabled={busy}>
+          {busy ? (
+            <>
+              <InlineLoader dark /> Adding...
+            </>
+          ) : (
+            <>
+              Add banner <Plus size={16} />
+            </>
+          )}
         </button>
       </form>
 
@@ -3948,11 +4064,11 @@ function AdminBanners() {
 
           {items.map((b) => (
             <div className="bannerrow" key={b._id}>
-              <img src={b.imageUrl} alt={b.title} />
+              <img src={b.imageUrl} alt={b.title || "Banner"} />
 
               <div>
                 <b>{b.title || "Untitled banner"}</b>
-                <p>{b.subtitle}</p>
+                <p>{b.subtitle || "—"}</p>
                 <button
                   className="btn outline"
                   onClick={async () => {
@@ -4012,7 +4128,7 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* Admin Orders — PROFESSIONAL REDESIGN                          */
+/* Admin Orders — with revenue stats                            */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -4122,9 +4238,17 @@ function AdminOrders() {
     ).length;
     const delivered = items.filter((o) => o.status === "delivered").length;
     const cancelled = items.filter((o) => o.status === "cancelled").length;
-    const revenue = items
+
+    // ✅ Total revenue: all orders EXCEPT cancelled
+    const totalRevenue = items
       .filter((o) => o.status !== "cancelled")
       .reduce((s, o) => s + Number(o.total || 0), 0);
+
+    // ✅ Success revenue: only delivered orders
+    const successRevenue = items
+      .filter((o) => o.status === "delivered")
+      .reduce((s, o) => s + Number(o.total || 0), 0);
+
     const pendingPayment = items.filter(
       (o) => o.paymentStatus === "pending_verification",
     ).length;
@@ -4135,7 +4259,8 @@ function AdminOrders() {
       processing,
       delivered,
       cancelled,
-      revenue,
+      totalRevenue,
+      successRevenue,
       pendingPayment,
     };
   }, [items]);
@@ -4214,6 +4339,48 @@ function AdminOrders() {
         </button>
       </div>
 
+      {/* ✅ Revenue highlight cards */}
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-4 ring-1 ring-inset ring-orange-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-orange-700">
+                Total order revenue
+              </p>
+              <p className="mt-1 text-2xl font-black text-orange-900 tabular-nums sm:text-3xl">
+                {money(stats.totalRevenue)}
+              </p>
+              <p className="mt-1 text-[11px] text-orange-700/70">
+                All orders excluding cancelled ({stats.total - stats.cancelled}{" "}
+                orders)
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm">
+              <Wallet size={22} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 ring-1 ring-inset ring-emerald-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">
+                Total success revenue
+              </p>
+              <p className="mt-1 text-2xl font-black text-emerald-900 tabular-nums sm:text-3xl">
+                {money(stats.successRevenue)}
+              </p>
+              <p className="mt-1 text-[11px] text-emerald-700/70">
+                Delivered orders only ({stats.delivered} orders)
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
+              <TrendingUp size={22} />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard
           label="Total orders"
@@ -4240,16 +4407,16 @@ function AdminOrders() {
           icon={CheckCircle2}
         />
         <StatCard
+          label="Cancelled"
+          value={stats.cancelled}
+          tone="red"
+          icon={XCircle}
+        />
+        <StatCard
           label="Payment due"
           value={stats.pendingPayment}
           tone="red"
           icon={CreditCard}
-        />
-        <StatCard
-          label="Revenue"
-          value={money(stats.revenue)}
-          tone="orange"
-          icon={ShoppingBag}
         />
       </div>
 
