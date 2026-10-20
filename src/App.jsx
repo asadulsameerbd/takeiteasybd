@@ -46,8 +46,9 @@ import {
   Percent,
   Bell,
 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
-import { api, fileData } from "./api";
+import { api, apiFetch, fileData } from "./api";
 import { useAuth } from "./context/AuthContext";
 import logo from "./assets/logo.jpeg";
 import logobgl from "./assets/logobgl.png";
@@ -662,7 +663,6 @@ function Home() {
 
           {banners.length > 1 && (
             <>
-              {/* ✅ Arrow buttons */}
               <div className="slides relative z-30">
                 <button
                   aria-label="Previous banner"
@@ -680,7 +680,6 @@ function Home() {
                 </button>
               </div>
 
-              {/* ✅ Unique dot pagination — active dot is a pill */}
               <div className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 sm:bottom-6">
                 {banners.map((_, i) => {
                   const isActive = i === slide;
@@ -3648,88 +3647,20 @@ function AdminLogin() {
 }
 
 /* ============================================================ */
-/* Admin Navigation — with New Orders badge                     */
+/* Admin Navigation — TanStack Query                            */
 /* ============================================================ */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
-  const [newCount, setNewCount] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    let es = null;
-    let reconnectTimer = null;
+  const { data: newOrders = [] } = useQuery({
+    queryKey: ["new-orders"],
+    queryFn: () => apiFetch("/admin/orders/new"),
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+  });
 
-    // API base URL (same as api.js)
-    const API_BASE = (
-      import.meta.env.VITE_API_URL ||
-      "https://take-it-easy-bd-server.vercel.app/api"
-    ).replace(/\/+$/, "");
-
-    const STREAM_URL = `${API_BASE}/admin/orders/stream`;
-
-    async function fetchCount() {
-      try {
-        const data = await api("/admin/orders/new");
-        if (!cancelled) setNewCount(Array.isArray(data) ? data.length : 0);
-      } catch {
-        // silent fail
-      }
-    }
-
-    // Initial count
-    fetchCount();
-
-    // ✅ SSE connection for live updates
-    function connectSSE() {
-      if (cancelled) return;
-
-      try {
-        es = new EventSource(STREAM_URL);
-
-        es.addEventListener("connected", () => {
-          // connection established
-          fetchCount();
-        });
-
-        es.addEventListener("new-order", () => {
-          // ✅ New order aaishe — count refresh
-          fetchCount();
-        });
-
-        es.addEventListener("order-updated", () => {
-          // ✅ Order status change — count refresh
-          fetchCount();
-        });
-
-        es.onerror = () => {
-          // Auto-reconnect after 3s
-          if (es) es.close();
-          if (reconnectTimer) clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(connectSSE, 3000);
-        };
-      } catch {
-        // Browser e EventSource support na thakle polling fallback
-        const id = setInterval(fetchCount, 30000);
-        return () => clearInterval(id);
-      }
-    }
-
-    connectSSE();
-
-    // Fallback polling (jodi SSE fail hoy)
-    const pollId = setInterval(() => {
-      if (!es || es.readyState === EventSource.CLOSED) {
-        fetchCount();
-      }
-    }, 30000);
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (es) es.close();
-      clearInterval(pollId);
-    };
-  }, []);
+  const newCount = newOrders.length;
 
   return (
     <aside className="adminnav">
@@ -4511,87 +4442,26 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* New Orders — notification page                               */
+/* New Orders — TanStack Query (live)                            */
 /* ============================================================ */
 function NewOrders() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
 
-  async function refresh(showSpinner = false) {
-    if (showSpinner) setRefreshing(true);
+  const {
+    data: items = [],
+    isLoading: loading,
+    isFetching: refreshing,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["new-orders"],
+    queryFn: () => apiFetch("/admin/orders/new"),
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+  });
 
-    try {
-      const data = await api("/admin/orders/new");
-      setItems(Array.isArray(data) ? data : []);
-      setError("");
-    } catch (e) {
-      setError(e.message || "Failed to load new orders.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    let es = null;
-    let reconnectTimer = null;
-
-    const API_BASE = (
-      import.meta.env.VITE_API_URL ||
-      "https://take-it-easy-bd-server.vercel.app/api"
-    ).replace(/\/+$/, "");
-
-    const STREAM_URL = `${API_BASE}/admin/orders/stream`;
-
-    refresh();
-
-    function connectSSE() {
-      if (cancelled) return;
-
-      try {
-        es = new EventSource(STREAM_URL);
-
-        es.addEventListener("connected", () => {
-          refresh();
-        });
-
-        es.addEventListener("new-order", () => {
-          refresh();
-        });
-
-        es.addEventListener("order-updated", () => {
-          refresh();
-        });
-
-        es.onerror = () => {
-          if (es) es.close();
-          if (reconnectTimer) clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(connectSSE, 3000);
-        };
-      } catch {
-        const id = setInterval(() => refresh(), 30000);
-        return () => clearInterval(id);
-      }
-    }
-
-    connectSSE();
-
-    const pollId = setInterval(() => {
-      if (!es || es.readyState === EventSource.CLOSED) {
-        refresh();
-      }
-    }, 30000);
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (es) es.close();
-      clearInterval(pollId);
-    };
-  }, []);
+  const errorMsg = error?.message || "";
 
   async function processOrder(id, nextStatus) {
     try {
@@ -4599,8 +4469,11 @@ function NewOrders() {
         method: "PATCH",
         body: JSON.stringify({ status: nextStatus }),
       });
+
       msg(`Order marked as ${nextStatus}`);
-      await refresh();
+
+      await queryClient.invalidateQueries({ queryKey: ["new-orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
     } catch (e) {
       msg(e.message, "error");
     }
@@ -4620,11 +4493,14 @@ function NewOrders() {
             New orders waiting to be processed. Process/cancel and they'll move
             to the Orders page.
           </p>
+          <p className="mt-1 text-[11px] font-bold text-emerald-600">
+            ● Live — updates every 3 seconds
+          </p>
         </div>
 
         <button
           type="button"
-          onClick={() => refresh(true)}
+          onClick={() => refetch()}
           disabled={refreshing}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
         >
@@ -4633,9 +4509,9 @@ function NewOrders() {
         </button>
       </div>
 
-      {error && (
+      {errorMsg && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+          {errorMsg}
         </div>
       )}
 
@@ -4792,7 +4668,7 @@ function NewOrders() {
 }
 
 /* ============================================================ */
-/* Admin Orders                                                 */
+/* Admin Orders — TanStack Query (live)                          */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -4853,33 +4729,35 @@ const PAYMENT_STATUS_META = {
 };
 
 function AdminOrders() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("all");
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState(null);
 
-  async function refresh(showSpinner = false) {
-    if (showSpinner) setRefreshing(true);
+  const {
+    data: items = [],
+    isLoading: loading,
+    isFetching: refreshing,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["admin-orders"],
+    queryFn: () => apiFetch("/admin/orders"),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+  });
 
-    try {
-      const data = await api("/admin/orders");
-      setItems(Array.isArray(data) ? data : []);
-      setError("");
-    } catch (e) {
-      setError(e.message || "Failed to load orders.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const errorMsg = error?.message || "";
+
+  async function refresh(showSpinner = false) {
+    if (showSpinner) {
+      await refetch();
+    } else {
+      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
     }
   }
-
-  useEffect(() => {
-    refresh();
-  }, []);
 
   async function update(id, patch) {
     try {
@@ -4888,7 +4766,8 @@ function AdminOrders() {
         body: JSON.stringify(patch),
       });
       msg("Order updated");
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["new-orders"] });
     } catch (e) {
       msg(e.message, "error");
     }
@@ -4988,6 +4867,9 @@ function AdminOrders() {
           <p className="mt-1 text-sm text-neutral-500">
             Manage deliveries, verify payments and keep customers happy.
           </p>
+          <p className="mt-1 text-[11px] font-bold text-emerald-600">
+            ● Live — updates every 5 seconds
+          </p>
         </div>
 
         <button
@@ -5081,9 +4963,9 @@ function AdminOrders() {
         />
       </div>
 
-      {error && (
+      {errorMsg && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+          {errorMsg}
         </div>
       )}
 
