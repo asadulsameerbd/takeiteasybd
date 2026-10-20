@@ -1,7 +1,8 @@
 // api.js
 
 const API_BASE = (
-  import.meta.env.VITE_API_URL || "https://takeiteasybd.vercel.app/api"
+  import.meta.env.VITE_API_URL ||
+  "https://take-it-easy-bd-server.vercel.app/api"
 ).replace(/\/+$/, ""); // ✅ trailing slash remove
 
 function getToken() {
