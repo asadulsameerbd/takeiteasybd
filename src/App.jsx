@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Link,
   Navigate,
@@ -20,6 +26,18 @@ import {
   UserRound,
   Pencil,
   Image as ImageIcon,
+  Package,
+  PackageCheck,
+  Truck,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  RefreshCw,
+  Phone,
+  MapPin,
+  CreditCard,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { api, fileData } from "./api";
@@ -89,6 +107,14 @@ function useCart() {
   }, [cart]);
 
   const add = (p, size = "", notify = true) => {
+    // ✅ Stock out guard
+    if (Number(p.stock || 0) <= 0) {
+      if (notify) {
+        msg("এই পণ্যটি স্টক আউট।", "warning");
+      }
+      return;
+    }
+
     setCart((old) => {
       const key = p._id + ":" + size;
       const found = old.find((i) => i.key === key);
@@ -301,10 +327,12 @@ function Layout() {
   );
 }
 
-/* Product Card */
-
+/* ============================================================ */
+/* Product Card — with Stock Out auto display                   */
+/* ============================================================ */
 function Card({ p, add }) {
   const hasSale = Number(p.compareAtPrice) > Number(p.price);
+  const isOutOfStock = Number(p.stock || 0) <= 0;
 
   const discount = hasSale
     ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100)
@@ -323,15 +351,24 @@ function Card({ p, add }) {
           }
           alt={p.title}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 ease-out sm:duration-700 sm:group-hover:scale-105"
+          className={`h-full w-full object-cover transition-transform duration-500 ease-out sm:duration-700 sm:group-hover:scale-105 ${
+            isOutOfStock ? "opacity-60 grayscale" : ""
+          }`}
         />
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
 
-        {hasSale && (
-          <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-orange-600 px-2 py-1 text-[9px] font-extrabold leading-tight text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px] sm:tracking-wide">
-            Sale · {discount}% off
+        {/* ✅ Stock Out badge (top priority over Sale) */}
+        {isOutOfStock ? (
+          <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-stone-900 px-2 py-1 text-[9px] font-extrabold uppercase leading-tight tracking-wide text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px]">
+            Stock Out
           </span>
+        ) : (
+          hasSale && (
+            <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-orange-600 px-2 py-1 text-[9px] font-extrabold leading-tight text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px] sm:tracking-wide">
+              Sale · {discount}% off
+            </span>
+          )
         )}
 
         <span className="absolute bottom-3 right-3 hidden h-10 w-10 translate-y-2 place-items-center rounded-full bg-white text-stone-900 opacity-0 shadow-lg transition-all duration-300 sm:grid sm:group-hover:translate-y-0 sm:group-hover:opacity-100">
@@ -365,26 +402,38 @@ function Card({ p, add }) {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => add(p)}
-          aria-label={`কার্টে যোগ করুন: ${p.title}`}
-          className="mt-3 flex min-h-10 w-full min-w-0 items-center justify-center gap-1 rounded-lg bg-stone-950 px-1.5 py-2 text-[11px] font-semibold leading-none text-white transition-colors duration-200 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 active:scale-[0.98] sm:mt-5 sm:min-h-11 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-3 sm:text-sm"
-        >
-          <ShoppingBag
-            size={14}
-            className="hidden shrink-0 sm:block"
-            aria-hidden="true"
-          />
+        {/* ✅ Add to Cart / Stock Out button */}
+        {isOutOfStock ? (
+          <button
+            type="button"
+            disabled
+            aria-label="স্টক শেষ"
+            className="mt-3 flex min-h-10 w-full min-w-0 cursor-not-allowed items-center justify-center gap-1 rounded-lg border border-stone-200 bg-stone-100 px-1.5 py-2 text-[11px] font-semibold leading-none text-stone-400 sm:mt-5 sm:min-h-11 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-3 sm:text-sm"
+          >
+            <span className="hind whitespace-nowrap">স্টক শেষ</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => add(p)}
+            aria-label={`কার্টে যোগ করুন: ${p.title}`}
+            className="mt-3 flex min-h-10 w-full min-w-0 items-center justify-center gap-1 rounded-lg bg-stone-950 px-1.5 py-2 text-[11px] font-semibold leading-none text-white transition-colors duration-200 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 active:scale-[0.98] sm:mt-5 sm:min-h-11 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-3 sm:text-sm"
+          >
+            <ShoppingBag
+              size={14}
+              className="hidden shrink-0 sm:block"
+              aria-hidden="true"
+            />
 
-          <span className="hind whitespace-nowrap">কার্টে যোগ করুন</span>
+            <span className="hind whitespace-nowrap">কার্টে যোগ করুন</span>
 
-          <ArrowUpRight
-            size={14}
-            aria-hidden="true"
-            className="hidden shrink-0 sm:block"
-          />
-        </button>
+            <ArrowUpRight
+              size={14}
+              aria-hidden="true"
+              className="hidden shrink-0 sm:block"
+            />
+          </button>
+        )}
       </div>
     </article>
   );
@@ -1013,7 +1062,9 @@ function FilterBox({
   );
 }
 
-/* Product Details */
+/* ============================================================ */
+/* Product Details — with Stock Out auto display                */
+/* ============================================================ */
 function Product() {
   const { slug } = useParams();
   const { add } = useContext(C);
@@ -1040,6 +1091,7 @@ function Product() {
   }
 
   const p = data.product;
+  const isOutOfStock = Number(p.stock || 0) <= 0;
 
   const images = p.images?.length
     ? p.images
@@ -1085,13 +1137,24 @@ function Product() {
                 key={images[selectedImage]}
                 src={images[selectedImage]}
                 alt={p.title}
-                className="h-full w-full object-contain transition-opacity duration-200"
+                className={`h-full w-full object-contain transition-opacity duration-200 ${
+                  isOutOfStock ? "opacity-70" : ""
+                }`}
               />
 
               {images.length > 1 && (
                 <span className="absolute bottom-3 right-3 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
                   {selectedImage + 1} / {images.length}
                 </span>
+              )}
+
+              {/* ✅ Stock Out overlay */}
+              {isOutOfStock && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/25 backdrop-blur-[1px]">
+                  <span className="rotate-[-8deg] rounded-lg bg-stone-900 px-5 py-2.5 text-base font-black uppercase tracking-widest text-white shadow-xl sm:text-lg">
+                    Stock Out
+                  </span>
+                </div>
               )}
             </div>
 
@@ -1122,7 +1185,16 @@ function Product() {
         </div>
 
         <div className="w-full min-w-0">
-          <span className="eyebrow">{p.category}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="eyebrow">{p.category}</span>
+
+            {/* ✅ Stock Out badge next to category */}
+            {isOutOfStock && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-red-700">
+                <XCircle size={11} /> Stock Out
+              </span>
+            )}
+          </div>
 
           <h1 className="mt-2 break-words text-2xl font-semibold leading-tight text-neutral-900 sm:text-3xl xl:text-4xl">
             {p.title}
@@ -1168,8 +1240,12 @@ function Product() {
                       s === size
                         ? "selected border-neutral-900 bg-neutral-900 text-white"
                         : "border-neutral-300 bg-white text-neutral-800 hover:border-neutral-900"
-                    }`}
-                    onClick={() => setSize(s)}
+                    } ${isOutOfStock ? "cursor-not-allowed opacity-50" : ""}`}
+                    onClick={() => {
+                      if (isOutOfStock) return;
+                      setSize(s);
+                    }}
+                    disabled={isOutOfStock}
                     key={s}
                     aria-pressed={s === size}
                   >
@@ -1180,37 +1256,61 @@ function Product() {
             </div>
           )}
 
+          {/* ✅ Action Buttons — disabled when out of stock */}
           <div className="buyrow mt-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:mt-8">
-            <button
-              type="button"
-              className="btn orange flex min-w-0 items-center justify-center gap-2"
-              onClick={() => {
-                if (p.sizes?.length && !size) {
-                  return msg("Please select a size.", "warning");
-                }
+            {isOutOfStock ? (
+              <>
+                <button
+                  type="button"
+                  disabled
+                  className="flex min-h-12 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 px-4 py-3 text-sm font-bold text-neutral-400"
+                >
+                  <XCircle size={16} />
+                  <span>স্টক শেষ</span>
+                </button>
 
-                add(p, size);
-              }}
-            >
-              <span className="hind text-sm">কার্টে যোগ করুন</span>
-              <ShoppingBag className="h-4 w-4 shrink-0" />
-            </button>
+                <Link
+                  to="/products"
+                  className="btn dark flex min-w-0 items-center justify-center gap-2"
+                >
+                  <span>অন্য পণ্য দেখুন</span>
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </Link>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn orange flex min-w-0 items-center justify-center gap-2"
+                  onClick={() => {
+                    if (p.sizes?.length && !size) {
+                      return msg("Please select a size.", "warning");
+                    }
 
-            <button
-              type="button"
-              className="btn dark flex min-w-0 items-center justify-center gap-2"
-              onClick={() => {
-                if (p.sizes?.length && !size) {
-                  return msg("Please select a size.", "warning");
-                }
+                    add(p, size);
+                  }}
+                >
+                  <span className="hind text-sm">কার্টে যোগ করুন</span>
+                  <ShoppingBag className="h-4 w-4 shrink-0" />
+                </button>
 
-                add(p, size, false);
-                location.href = "/checkout";
-              }}
-            >
-              <span>Buy now</span>
-              <ArrowRight className="h-4 w-4 shrink-0" />
-            </button>
+                <button
+                  type="button"
+                  className="btn dark flex min-w-0 items-center justify-center gap-2"
+                  onClick={() => {
+                    if (p.sizes?.length && !size) {
+                      return msg("Please select a size.", "warning");
+                    }
+
+                    add(p, size, false);
+                    location.href = "/checkout";
+                  }}
+                >
+                  <span>Buy now</span>
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </button>
+              </>
+            )}
           </div>
 
           <section className="reviews mt-9 border-t border-neutral-200 pt-6 sm:mt-12 sm:pt-8">
@@ -1299,6 +1399,7 @@ function Product() {
     </main>
   );
 }
+
 /* Cart Page */
 
 function Cart() {
@@ -1979,7 +2080,7 @@ function Checkout() {
               accept="image/*"
               onChange={(e) => setFile(e.target.files?.[0])}
               required
-              className="block w-full cursor-pointer rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-white hover:file:bg-neutral-800"
+              className="block w-full cursor-pointer rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] font-bold file:text-white hover:file:bg-neutral-800"
             />
             {file && (
               <p className="mt-1 truncate text-[11px] text-green-600">
@@ -3318,16 +3419,13 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products — UPDATED with EDIT + MULTIPLE IMAGE UPLOAD    */
+/* Admin Products — EDIT + MULTIPLE IMAGE UPLOAD                */
 /* ============================================================ */
 function AdminProducts() {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  // ✅ Multiple files support
   const [files, setFiles] = useState([]);
-
-  // ✅ Edit mode state
   const [editingId, setEditingId] = useState(null);
 
   const emptyForm = {
@@ -3381,7 +3479,6 @@ function AdminProducts() {
       imageUrls: (p.images || []).join("\n"),
     });
 
-    // scroll to form
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -3390,13 +3487,11 @@ function AdminProducts() {
     setBusy(true);
 
     try {
-      // Start with URL lines the admin typed
       let images = f.imageUrls
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
 
-      // ✅ Upload all selected files at once (bulk endpoint)
       if (files.length > 0) {
         const base64List = await Promise.all(
           files.map((file) => fileData(file)),
@@ -3436,14 +3531,12 @@ function AdminProducts() {
       };
 
       if (editingId) {
-        // ✅ Update existing product
         await api("/admin/products/" + editingId, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
         msg("Product updated");
       } else {
-        // ✅ Create new product
         await api("/admin/products", {
           method: "POST",
           body: JSON.stringify(payload),
@@ -3526,7 +3619,6 @@ function AdminProducts() {
             />
           </label>
 
-          {/* ✅ Multiple image upload */}
           <label className="span">
             Upload images (multiple, 5 MB each max)
             <input
@@ -3568,7 +3660,12 @@ function AdminProducts() {
             <div>
               <b>{p.title}</b>
               <small>
-                {money(p.price)} · {p.category} · Stock {p.stock}
+                {money(p.price)} · {p.category} ·{" "}
+                {Number(p.stock || 0) <= 0 ? (
+                  <span className="font-bold text-red-600">STOCK OUT</span>
+                ) : (
+                  <>Stock {p.stock}</>
+                )}
                 {p.images?.length > 1 && (
                   <>
                     {" "}
@@ -3600,7 +3697,6 @@ function AdminProducts() {
 
                   await refresh();
 
-                  // If deleting the one being edited, reset form
                   if (editingId === p._id) resetForm();
 
                   msg("Product deleted");
@@ -3791,115 +3887,655 @@ function AdminBanners() {
   );
 }
 
-/* Admin Orders */
+/* ============================================================ */
+/* Admin Orders — PROFESSIONAL REDESIGN                          */
+/* ============================================================ */
+const ORDER_STATUS_META = {
+  pending: {
+    label: "Pending",
+    color: "bg-amber-50 text-amber-700 ring-amber-200",
+    dot: "bg-amber-500",
+    icon: Clock,
+  },
+  confirmed: {
+    label: "Confirmed",
+    color: "bg-blue-50 text-blue-700 ring-blue-200",
+    dot: "bg-blue-500",
+    icon: PackageCheck,
+  },
+  processing: {
+    label: "Processing",
+    color: "bg-violet-50 text-violet-700 ring-violet-200",
+    dot: "bg-violet-500",
+    icon: Package,
+  },
+  shipped: {
+    label: "Shipped",
+    color: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    dot: "bg-indigo-500",
+    icon: Truck,
+  },
+  delivered: {
+    label: "Delivered",
+    color: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    dot: "bg-emerald-500",
+    icon: CheckCircle2,
+  },
+  cancelled: {
+    label: "Cancelled",
+    color: "bg-red-50 text-red-700 ring-red-200",
+    dot: "bg-red-500",
+    icon: XCircle,
+  },
+};
+
+const PAYMENT_STATUS_META = {
+  not_required: {
+    label: "Pay on delivery",
+    color: "bg-stone-100 text-stone-600 ring-stone-200",
+  },
+  pending_verification: {
+    label: "Pending verification",
+    color: "bg-amber-50 text-amber-700 ring-amber-200",
+  },
+  verified: {
+    label: "Verified",
+    color: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  },
+  rejected: {
+    label: "Rejected",
+    color: "bg-red-50 text-red-700 ring-red-200",
+  },
+};
+
 function AdminOrders() {
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
-  async function refresh() {
-    setItems(await api("/admin/orders"));
+  const [activeTab, setActiveTab] = useState("all");
+  const [query, setQuery] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+
+  async function refresh(showSpinner = false) {
+    if (showSpinner) setRefreshing(true);
+
+    try {
+      const data = await api("/admin/orders");
+      setItems(Array.isArray(data) ? data : []);
+      setError("");
+    } catch (e) {
+      setError(e.message || "Failed to load orders.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => {
-    refresh().catch((e) => msg(e.message, "error"));
+    refresh();
   }, []);
 
-  async function update(id, p) {
+  async function update(id, patch) {
     try {
       await api("/admin/orders/" + id, {
         method: "PATCH",
-        body: JSON.stringify(p),
+        body: JSON.stringify(patch),
       });
-
-      await refresh();
       msg("Order updated");
+      await refresh();
     } catch (e) {
       msg(e.message, "error");
     }
   }
 
+  const stats = useMemo(() => {
+    const total = items.length;
+    const pending = items.filter((o) => o.status === "pending").length;
+    const processing = items.filter((o) =>
+      ["confirmed", "processing", "shipped"].includes(o.status),
+    ).length;
+    const delivered = items.filter((o) => o.status === "delivered").length;
+    const cancelled = items.filter((o) => o.status === "cancelled").length;
+    const revenue = items
+      .filter((o) => o.status !== "cancelled")
+      .reduce((s, o) => s + Number(o.total || 0), 0);
+    const pendingPayment = items.filter(
+      (o) => o.paymentStatus === "pending_verification",
+    ).length;
+
+    return {
+      total,
+      pending,
+      processing,
+      delivered,
+      cancelled,
+      revenue,
+      pendingPayment,
+    };
+  }, [items]);
+
+  const tabs = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "pending", label: "Pending", count: stats.pending },
+    { id: "active", label: "Active", count: stats.processing },
+    { id: "delivered", label: "Delivered", count: stats.delivered },
+    { id: "cancelled", label: "Cancelled", count: stats.cancelled },
+    {
+      id: "payment_due",
+      label: "Payment due",
+      count: stats.pendingPayment,
+    },
+  ];
+
+  const filtered = useMemo(() => {
+    let list = items;
+
+    if (activeTab === "pending")
+      list = list.filter((o) => o.status === "pending");
+    else if (activeTab === "active")
+      list = list.filter((o) =>
+        ["confirmed", "processing", "shipped"].includes(o.status),
+      );
+    else if (activeTab === "delivered")
+      list = list.filter((o) => o.status === "delivered");
+    else if (activeTab === "cancelled")
+      list = list.filter((o) => o.status === "cancelled");
+    else if (activeTab === "payment_due")
+      list = list.filter((o) => o.paymentStatus === "pending_verification");
+
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (o) =>
+          String(o.orderNumber || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(o.customerName || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(o.phone || "")
+            .toLowerCase()
+            .includes(q),
+      );
+    }
+
+    return list;
+  }, [items, activeTab, query]);
+
   return (
     <section className="adminmain">
-      <Heading
-        tag="FULFILMENT"
-        title="Orders."
-        desc="Update delivery status and verify advance payments."
-      />
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-orange-600">
+            FULFILMENT
+          </span>
+          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-900 sm:text-4xl">
+            Orders
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Manage deliveries, verify payments and keep customers happy.
+          </p>
+        </div>
 
-      {items.map((o) => (
-        <article className="box ordercard" key={o._id}>
-          <div>
-            <span className="eyebrow">{o.orderNumber}</span>
+        <button
+          type="button"
+          onClick={() => refresh(true)}
+          disabled={refreshing}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
+        >
+          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
 
-            <h2>
-              {o.customerName} · {money(o.total)}
-            </h2>
+      {/* Stats cards */}
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard
+          label="Total orders"
+          value={stats.total}
+          tone="neutral"
+          icon={Package}
+        />
+        <StatCard
+          label="Pending"
+          value={stats.pending}
+          tone="amber"
+          icon={Clock}
+        />
+        <StatCard
+          label="Active"
+          value={stats.processing}
+          tone="violet"
+          icon={Truck}
+        />
+        <StatCard
+          label="Delivered"
+          value={stats.delivered}
+          tone="emerald"
+          icon={CheckCircle2}
+        />
+        <StatCard
+          label="Payment due"
+          value={stats.pendingPayment}
+          tone="red"
+          icon={CreditCard}
+        />
+        <StatCard
+          label="Revenue"
+          value={money(stats.revenue)}
+          tone="orange"
+          icon={ShoppingBag}
+        />
+      </div>
 
-            <p>
-              {o.phone} · {o.address}, {o.city}
-            </p>
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
-            <p>
-              Payment: {o.paymentMethod} · Transaction ID:{" "}
-              {o.transactionId || "not provided"}
-            </p>
-
-            {o.paymentScreenshot && (
-              <a target="_blank" rel="noreferrer" href={o.paymentScreenshot}>
-                View payment screenshot ↗
-              </a>
-            )}
-
-            {o.items.map((i, n) => (
-              <p key={n}>
-                {i.title} × {i.quantity} {i.size}
-              </p>
-            ))}
-          </div>
-
-          <div className="formgrid">
-            <label>
-              Order status
-              <select
-                value={o.status}
-                onChange={(e) => update(o._id, { status: e.target.value })}
+      {/* Filter tabs + search */}
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:p-4">
+        <div className="-mx-1 flex flex-1 gap-1.5 overflow-x-auto px-1">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${
+                activeTab === t.id
+                  ? "bg-neutral-950 text-white"
+                  : "bg-neutral-50 text-neutral-600 hover:bg-neutral-100"
+              }`}
+            >
+              {t.label}
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                  activeTab === t.id
+                    ? "bg-white/20 text-white"
+                    : "bg-white text-neutral-500"
+                }`}
               >
-                {[
-                  "pending",
-                  "confirmed",
-                  "processing",
-                  "shipped",
-                  "delivered",
-                  "cancelled",
-                ].map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </label>
+                {t.count}
+              </span>
+            </button>
+          ))}
+        </div>
 
-            <label>
-              Payment status
-              <select
-                value={o.paymentStatus}
-                onChange={(e) =>
-                  update(o._id, {
-                    paymentStatus: e.target.value,
-                  })
-                }
-              >
-                {[
-                  "not_required",
-                  "pending_verification",
-                  "verified",
-                  "rejected",
-                ].map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </label>
+        <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-neutral-50 px-3 transition focus-within:ring-2 focus-within:ring-orange-400 sm:max-w-xs">
+          <Search size={16} className="shrink-0 text-neutral-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search order, name, phone..."
+            className="w-full min-w-0 bg-transparent py-2 text-sm outline-none placeholder:text-neutral-400"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="shrink-0 text-[11px] font-bold text-neutral-500 hover:text-orange-600"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Orders list */}
+      {loading ? (
+        <div className="rounded-2xl border border-neutral-200 bg-white p-12 text-center">
+          <RefreshCw
+            size={26}
+            className="mx-auto animate-spin text-neutral-400"
+          />
+          <p className="mt-3 text-sm text-neutral-500">Loading orders...</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+            <Package size={26} />
           </div>
-        </article>
-      ))}
+          <h3 className="mt-4 text-lg font-extrabold text-neutral-900">
+            No orders found
+          </h3>
+          <p className="mt-1 text-sm text-neutral-500">
+            {query
+              ? "Try a different search term or clear filters."
+              : "New orders will appear here as they come in."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((o) => {
+            const statusMeta =
+              ORDER_STATUS_META[o.status] || ORDER_STATUS_META.pending;
+            const paymentMeta =
+              PAYMENT_STATUS_META[o.paymentStatus] ||
+              PAYMENT_STATUS_META.not_required;
+            const StatusIcon = statusMeta.icon;
+            const expanded = expandedId === o._id;
+
+            return (
+              <article
+                key={o._id}
+                className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition hover:border-neutral-300"
+              >
+                {/* Header row */}
+                <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-white">
+                      <StatusIcon size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-neutral-500 sm:text-sm">
+                          {o.orderNumber}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${statusMeta.color}`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`}
+                          />
+                          {statusMeta.label}
+                        </span>
+                        {o.paymentStatus !== "not_required" && (
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
+                          >
+                            {paymentMeta.label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-sm font-extrabold text-neutral-900 sm:text-base">
+                        {o.customerName}
+                      </p>
+                      {o.createdAt && (
+                        <p className="text-xs text-neutral-400">
+                          {new Date(o.createdAt).toLocaleString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                        Total
+                      </p>
+                      <p className="text-lg font-black text-neutral-900 tabular-nums">
+                        {money(o.total)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expanded ? null : o._id)}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-200 text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
+                      aria-expanded={expanded}
+                      aria-label={expanded ? "Collapse" : "Expand"}
+                    >
+                      {expanded ? (
+                        <ChevronUp size={18} />
+                      ) : (
+                        <ChevronDown size={18} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded details */}
+                {expanded && (
+                  <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-2">
+                    {/* Left column: customer + items */}
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Customer
+                        </h4>
+                        <div className="space-y-1.5 text-sm">
+                          <p className="flex items-center gap-2 text-neutral-700">
+                            <UserRound
+                              size={14}
+                              className="shrink-0 text-neutral-400"
+                            />
+                            <span className="font-semibold text-neutral-900">
+                              {o.customerName}
+                            </span>
+                          </p>
+                          <p className="flex items-center gap-2 text-neutral-700">
+                            <Phone
+                              size={14}
+                              className="shrink-0 text-neutral-400"
+                            />
+                            <a
+                              href={`tel:${o.phone}`}
+                              className="font-mono hover:text-orange-600"
+                            >
+                              {o.phone}
+                            </a>
+                          </p>
+                          {(o.address || o.city) && (
+                            <p className="flex items-start gap-2 text-neutral-700">
+                              <MapPin
+                                size={14}
+                                className="mt-0.5 shrink-0 text-neutral-400"
+                              />
+                              <span>
+                                {o.address}
+                                {o.city ? `, ${o.city}` : ""}
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Items ({o.items?.length || 0})
+                        </h4>
+                        <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-200">
+                          {(o.items || []).map((it, n) => (
+                            <div
+                              key={n}
+                              className="flex items-center gap-3 p-2.5 text-sm"
+                            >
+                              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                                <img
+                                  src={
+                                    it.image ||
+                                    "https://placehold.co/80x80?text=Item"
+                                  }
+                                  alt={it.title}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-semibold text-neutral-900">
+                                  {it.title}
+                                </p>
+                                <p className="text-xs text-neutral-500">
+                                  Qty {it.quantity}
+                                  {it.size ? ` · ${it.size}` : ""} ·{" "}
+                                  {money(it.price)} each
+                                </p>
+                              </div>
+                              <p className="shrink-0 font-bold text-neutral-900 tabular-nums">
+                                {money(
+                                  Number(it.price || 0) *
+                                    Number(it.quantity || 1),
+                                )}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 space-y-1 rounded-xl bg-neutral-50 p-3 text-sm">
+                          <div className="flex justify-between text-neutral-600">
+                            <span>Subtotal</span>
+                            <span className="tabular-nums">
+                              {money(o.subtotal)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-neutral-600">
+                            <span>Delivery</span>
+                            <span className="tabular-nums">
+                              {money(o.deliveryCharge)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-t border-neutral-200 pt-1.5 font-black text-neutral-900">
+                            <span>Total</span>
+                            <span className="tabular-nums">
+                              {money(o.total)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right column: payment + status controls */}
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Payment
+                        </h4>
+                        <div className="rounded-xl border border-neutral-200 p-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-neutral-500">Method</span>
+                            <span className="font-semibold capitalize">
+                              {o.paymentMethod || "—"}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between">
+                            <span className="text-neutral-500">
+                              Transaction ID
+                            </span>
+                            <span className="font-mono text-xs">
+                              {o.transactionId || "—"}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between">
+                            <span className="text-neutral-500">Status</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
+                            >
+                              {paymentMeta.label}
+                            </span>
+                          </div>
+                          {o.paymentScreenshot && (
+                            <a
+                              href={o.paymentScreenshot}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:underline"
+                            >
+                              <ImageIcon size={12} /> View screenshot ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Update status
+                        </h4>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-neutral-600">
+                              Order status
+                            </span>
+                            <select
+                              value={o.status}
+                              onChange={(e) =>
+                                update(o._id, { status: e.target.value })
+                              }
+                              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                            >
+                              {[
+                                "pending",
+                                "confirmed",
+                                "processing",
+                                "shipped",
+                                "delivered",
+                                "cancelled",
+                              ].map((s) => (
+                                <option key={s} value={s}>
+                                  {ORDER_STATUS_META[s]?.label || s}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-neutral-600">
+                              Payment status
+                            </span>
+                            <select
+                              value={o.paymentStatus}
+                              onChange={(e) =>
+                                update(o._id, {
+                                  paymentStatus: e.target.value,
+                                })
+                              }
+                              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                            >
+                              {[
+                                "not_required",
+                                "pending_verification",
+                                "verified",
+                                "rejected",
+                              ].map((s) => (
+                                <option key={s} value={s}>
+                                  {PAYMENT_STATUS_META[s]?.label || s}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
+  );
+}
+
+/* Small stat card used in AdminOrders */
+function StatCard({ label, value, tone = "neutral", icon: Icon }) {
+  const tones = {
+    neutral: "bg-neutral-50 text-neutral-900 ring-neutral-200",
+    amber: "bg-amber-50 text-amber-800 ring-amber-200",
+    violet: "bg-violet-50 text-violet-800 ring-violet-200",
+    emerald: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    red: "bg-red-50 text-red-800 ring-red-200",
+    orange: "bg-orange-50 text-orange-800 ring-orange-200",
+  };
+
+  return (
+    <div
+      className={`rounded-2xl border bg-white p-3 ring-1 ring-inset ${tones[tone] || tones.neutral}`}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-80">
+          {label}
+        </p>
+        {Icon && <Icon size={14} className="opacity-70" />}
+      </div>
+      <p className="mt-1.5 text-xl font-black tabular-nums">{value}</p>
+    </div>
   );
 }
 
