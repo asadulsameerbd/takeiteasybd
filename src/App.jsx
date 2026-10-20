@@ -487,6 +487,9 @@ function Heading({ tag, title, desc }) {
 /* ============================================================ */
 /* Home Page — with Loader                                      */
 /* ============================================================ */
+/* ============================================================ */
+/* Home Page — with Loader (products + banner image)            */
+/* ============================================================ */
 function Home() {
   const { add } = useContext(C);
   const [products, setProducts] = useState([]);
@@ -494,6 +497,9 @@ function Home() {
   const [slide, setSlide] = useState(0);
   const [visible, setVisible] = useState(8);
   const [loading, setLoading] = useState(true);
+
+  // ✅ banner image load state
+  const [bannerImageLoaded, setBannerImageLoaded] = useState(false);
 
   const sentinel = React.useRef(null);
 
@@ -543,19 +549,46 @@ function Home() {
 
   const b = banners[slide];
 
+  // ✅ slide change hole banner image abar loading state e jabe
+  useEffect(() => {
+    setBannerImageLoaded(false);
+  }, [slide]);
+
   return (
     <main>
       <section className="wrap hero">
         <div
-          className="heroimg"
+          className="heroimg relative"
           style={
-            b
+            b && bannerImageLoaded
               ? {
                   backgroundImage: `linear-gradient(90deg,#000b,#0001),url("${b.imageUrl}")`,
                 }
-              : {}
+              : {
+                  backgroundImage: "linear-gradient(90deg,#000b,#0001)",
+                  backgroundColor: "#1c1917",
+                }
           }
         >
+          {/* ✅ Banner image loading spinner overlay */}
+          {b && !bannerImageLoaded && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center">
+              <Loader text="Loading banner" />
+            </div>
+          )}
+
+          {/* ✅ Hidden image tag to detect load */}
+          {b?.imageUrl && (
+            <img
+              src={b.imageUrl}
+              alt={b.title || "Banner"}
+              className="pointer-events-none absolute h-0 w-0 opacity-0"
+              onLoad={() => setBannerImageLoaded(true)}
+              onError={() => setBannerImageLoaded(true)}
+              aria-hidden="true"
+            />
+          )}
+
           <div className="herotext">
             <span className="eyebrow">TAKE IT EASY / WEAR IT EASY</span>
 
@@ -628,7 +661,6 @@ function Home() {
     </main>
   );
 }
-
 /* ============================================================ */
 /* Products Page — with Loader                                  */
 /* ============================================================ */
