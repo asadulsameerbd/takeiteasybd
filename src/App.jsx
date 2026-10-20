@@ -69,6 +69,17 @@ const msg = (title, icon = "success") =>
   });
 
 /* ============================================================ */
+/* ✅ Unified Query Keys — সব জায়গায় একই key ব্যবহার করতে হবে   */
+/* ============================================================ */
+const orderKeys = {
+  all: ["orders"],
+  // ✅ String(userId) — "id" আর "_id" দুইটাই কাজ করবে
+  mine: (userId) => ["orders", "mine", userId ? String(userId) : "guest"],
+  adminList: ["admin-orders"],
+  newOrders: ["new-orders"],
+};
+
+/* ============================================================ */
 /* Reusable Loaders                                             */
 /* ============================================================ */
 function Loader({ text = "Loading", fullScreen = false }) {
@@ -222,7 +233,13 @@ function useCart() {
 function Header() {
   const { count } = useContext(C);
   const { customer, logoutCustomer } = useAuth();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+
+  function handleLogout() {
+    queryClient.removeQueries({ queryKey: ["orders"] });
+    logoutCustomer();
+  }
 
   return (
     <header className="header">
@@ -262,7 +279,7 @@ function Header() {
                 <UserRound size={18} />
               </Link>
 
-              <button onClick={logoutCustomer} title="Log out">
+              <button onClick={handleLogout} title="Log out">
                 <LogOut size={18} />
               </button>
             </>
@@ -281,7 +298,6 @@ function Header() {
 }
 
 /* Footer */
-
 function Footer() {
   return (
     <footer className="w-full bg-[#111111] text-white">
@@ -515,7 +531,7 @@ function Heading({ tag, title, desc }) {
 }
 
 /* ============================================================ */
-/* Home Page — with smooth banner dots                          */
+/* Home Page                                                    */
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
@@ -1575,7 +1591,6 @@ function Product() {
 }
 
 /* Cart Page */
-
 function Cart() {
   const { cart, remove, update, total } = useContext(C);
 
@@ -1930,6 +1945,7 @@ function Cart() {
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
   const { customer } = useAuth();
+  const queryClient = useQueryClient();
 
   const [method, setMethod] = useState("cod");
   const [proof, setProof] = useState("txn");
@@ -2067,6 +2083,28 @@ function Checkout() {
       });
 
       setCart([]);
+
+      // ✅ সব order query force refetch — user প্রোফাইল + admin panel
+      const userId = customer?.user?.id || customer?.user?._id;
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.mine(userId),
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.newOrders,
+          refetchType: "all",
+        }),
+      ]);
 
       await Swal.fire({
         icon: "success",
@@ -2700,7 +2738,6 @@ function Checkout() {
 }
 
 /* Track Order */
-
 function Track() {
   const params = new URLSearchParams(location.search);
 
@@ -2923,7 +2960,6 @@ function Track() {
 }
 
 /* Contact  page */
-
 function Contact() {
   const supportOptions = [
     {
@@ -3098,9 +3134,12 @@ function Contact() {
   );
 }
 
-/* Customer Login */
+/* ============================================================ */
+/* Customer Login                                               */
+/* ============================================================ */
 function Login() {
   const { customerLogin } = useAuth();
+  const queryClient = useQueryClient();
   const [f, setF] = useState({ email: "", password: "" });
 
   async function submit(e) {
@@ -3108,6 +3147,14 @@ function Login() {
 
     try {
       await customerLogin(f);
+
+      // ✅ পুরানো user-এর orders cache মুছে ফেলো, তারপর সব refetch
+      queryClient.removeQueries({ queryKey: ["orders"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["orders"],
+        refetchType: "all",
+      });
+
       location.href = "/profile";
     } catch (e) {
       msg(e.message, "error");
@@ -3155,9 +3202,12 @@ function Login() {
   );
 }
 
-/* Customer Registration */
+/* ============================================================ */
+/* Customer Registration                                        */
+/* ============================================================ */
 function Register() {
   const { registerCustomer } = useAuth();
+  const queryClient = useQueryClient();
 
   const [f, setF] = useState({
     name: "",
@@ -3171,6 +3221,14 @@ function Register() {
 
     try {
       await registerCustomer(f);
+
+      // ✅ নতুন account — পুরানো cache মুছে নতুন করে fetch
+      queryClient.removeQueries({ queryKey: ["orders"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["orders"],
+        refetchType: "all",
+      });
+
       location.href = "/profile";
     } catch (e) {
       msg(e.message, "error");
@@ -3214,9 +3272,15 @@ function Register() {
   );
 }
 
-/* Customer Profile */
+/* ============================================================ */
+/* ✅ Customer Profile — TanStack Query দিয়ে orders              */
+/* ============================================================ */
 function Profile() {
   const { customer, updateProfile, logoutCustomer } = useAuth();
+  const queryClient = useQueryClient();
+
+  // ✅ AuthContext এখন id দেয়, _id fallback
+  const userId = customer?.user?.id || customer?.user?._id;
 
   const [f, setF] = useState({
     name: customer?.user?.name || "",
@@ -3224,38 +3288,33 @@ function Profile() {
     phone: customer?.user?.phone || "",
   });
 
-  const [orders, setOrders] = useState([]);
-  const [loadingOrders, setLoadingOrders] = useState(true);
-  const [orderError, setOrderError] = useState("");
-
   useEffect(() => {
-    if (!customer?.token) {
-      setLoadingOrders(false);
-      return;
-    }
+    setF({
+      name: customer?.user?.name || "",
+      email: customer?.user?.email || "",
+      phone: customer?.user?.phone || "",
+    });
+  }, [customer?.user?.name, customer?.user?.email, customer?.user?.phone]);
 
-    let active = true;
+  const {
+    data: orders = [],
+    isLoading: loadingOrders,
+    error: orderQueryError,
+    refetch: refetchOrders,
+    isFetching: ordersFetching,
+  } = useQuery({
+    queryKey: orderKeys.mine(userId),
+    queryFn: async () => {
+      const data = await apiFetch("/orders/mine");
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!customer?.token && !!userId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+  });
 
-    api("/orders/mine")
-      .then((data) => {
-        if (active) {
-          setOrders(Array.isArray(data) ? data : []);
-          setOrderError("");
-        }
-      })
-      .catch((error) => {
-        if (active) {
-          setOrderError(error.message || "Unable to load your orders.");
-        }
-      })
-      .finally(() => {
-        if (active) setLoadingOrders(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [customer?.token]);
+  const orderError = orderQueryError?.message || "";
 
   if (!customer?.token) {
     return <Navigate to="/login" replace />;
@@ -3267,9 +3326,19 @@ function Profile() {
     try {
       await updateProfile(f);
       msg("Profile updated successfully.");
+      await queryClient.invalidateQueries({
+        queryKey: ["orders"],
+        refetchType: "all",
+      });
     } catch (error) {
       msg(error.message, "error");
     }
+  }
+
+  function handleLogout() {
+    // ✅ order cache পুরোপুরি মুছে দাও
+    queryClient.removeQueries({ queryKey: ["orders"] });
+    logoutCustomer();
   }
 
   const statusStyles = {
@@ -3346,7 +3415,7 @@ function Profile() {
             <button
               type="button"
               className="btn outline wide"
-              onClick={logoutCustomer}
+              onClick={handleLogout}
             >
               <LogOut size={16} />
               Log out
@@ -3362,9 +3431,24 @@ function Profile() {
               <p>Your orders, products and delivery information.</p>
             </div>
 
-            <span className="tie-order-count">
-              {orders.length} {orders.length === 1 ? "order" : "orders"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="tie-order-count">
+                {orders.length} {orders.length === 1 ? "order" : "orders"}
+              </span>
+              <button
+                type="button"
+                onClick={() => refetchOrders()}
+                disabled={ordersFetching}
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
+                aria-label="Refresh orders"
+              >
+                <RefreshCw
+                  size={12}
+                  className={ordersFetching ? "animate-spin" : ""}
+                />
+                Refresh
+              </button>
+            </div>
           </div>
 
           {loadingOrders ? (
@@ -3376,19 +3460,7 @@ function Profile() {
               <button
                 type="button"
                 className="btn outline"
-                onClick={() => {
-                  setLoadingOrders(true);
-                  setOrderError("");
-
-                  api("/orders/mine")
-                    .then((data) => {
-                      setOrders(Array.isArray(data) ? data : []);
-                    })
-                    .catch((error) => {
-                      setOrderError(error.message || "Unable to load orders.");
-                    })
-                    .finally(() => setLoadingOrders(false));
-                }}
+                onClick={() => refetchOrders()}
               >
                 Try again
               </button>
@@ -3651,9 +3723,10 @@ function AdminLogin() {
 /* ============================================================ */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: newOrders = [] } = useQuery({
-    queryKey: ["new-orders"],
+    queryKey: orderKeys.newOrders,
     queryFn: () => apiFetch("/admin/orders/new"),
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
@@ -3661,6 +3734,13 @@ function AdminNav() {
   });
 
   const newCount = newOrders.length;
+
+  function handleAdminLogout() {
+    queryClient.removeQueries({ queryKey: ["orders"] });
+    queryClient.removeQueries({ queryKey: orderKeys.adminList });
+    queryClient.removeQueries({ queryKey: orderKeys.newOrders });
+    logoutAdmin();
+  }
 
   return (
     <aside className="adminnav">
@@ -3691,7 +3771,7 @@ function AdminNav() {
         View store ↗
       </Link>
 
-      <button className="btn dark wide" onClick={logoutAdmin}>
+      <button className="btn dark wide" onClick={handleAdminLogout}>
         Log out
       </button>
     </aside>
@@ -3709,48 +3789,40 @@ function AdminLayout() {
 
 /* Admin Dashboard */
 function Dashboard() {
-  const [counts, setCounts] = useState([0, 0, 0]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    let cancelled = false;
+  const productsQuery = useQuery({
+    queryKey: ["admin-products"],
+    queryFn: () => apiFetch("/admin/products"),
+    staleTime: 0,
+  });
 
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const bannersQuery = useQuery({
+    queryKey: ["admin-banners"],
+    queryFn: () => apiFetch("/admin/banners"),
+    staleTime: 0,
+  });
 
-        const [products, banners, orders] = await Promise.all([
-          api("/admin/products"),
-          api("/admin/banners"),
-          api("/admin/orders"),
-        ]);
+  const ordersQuery = useQuery({
+    queryKey: orderKeys.adminList,
+    queryFn: () => apiFetch("/admin/orders"),
+    staleTime: 0,
+  });
 
-        if (cancelled) return;
+  const loading =
+    productsQuery.isLoading || bannersQuery.isLoading || ordersQuery.isLoading;
 
-        setCounts([
-          Array.isArray(products) ? products.length : 0,
-          Array.isArray(banners) ? banners.length : 0,
-          Array.isArray(orders) ? orders.length : 0,
-        ]);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message || "Failed to load dashboard data");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
+  const error =
+    productsQuery.error?.message ||
+    bannersQuery.error?.message ||
+    ordersQuery.error?.message ||
+    "";
 
-    fetchDashboardData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const counts = [
+    productsQuery.data?.length || 0,
+    bannersQuery.data?.length || 0,
+    ordersQuery.data?.length || 0,
+  ];
 
   return (
     <section className="adminmain">
@@ -3767,7 +3839,11 @@ function Dashboard() {
           <button
             type="button"
             className="btn outline"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+              queryClient.invalidateQueries({ queryKey: ["admin-banners"] });
+              queryClient.invalidateQueries({ queryKey: orderKeys.adminList });
+            }}
           >
             Refresh
           </button>
@@ -3803,9 +3879,8 @@ function Dashboard() {
 /* Admin Products                                               */
 /* ============================================================ */
 function AdminProducts() {
-  const [items, setItems] = useState([]);
+  const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   const [files, setFiles] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -3829,15 +3904,19 @@ function AdminProducts() {
 
   const [f, setF] = useState(emptyForm);
 
-  async function refresh() {
-    setItems(await api("/admin/products"));
-  }
+  const {
+    data: items = [],
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ["admin-products"],
+    queryFn: () => apiFetch("/admin/products"),
+    staleTime: 0,
+  });
 
-  useEffect(() => {
-    refresh()
-      .catch((e) => msg(e.message, "error"))
-      .finally(() => setLoading(false));
-  }, []);
+  async function refresh() {
+    await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+  }
 
   function resetForm() {
     setF(emptyForm);
@@ -3958,6 +4037,10 @@ function AdminProducts() {
 
       resetForm();
       await refresh();
+      await queryClient.invalidateQueries({
+        queryKey: ["products"],
+        refetchType: "all",
+      });
     } catch (e) {
       msg(e.message, "error");
     } finally {
@@ -4115,7 +4198,16 @@ function AdminProducts() {
         <Loader text="Loading products" />
       ) : (
         <div className="box">
-          <h2>All products ({items.length})</h2>
+          <div className="flex items-center justify-between">
+            <h2>All products ({items.length})</h2>
+            <button
+              type="button"
+              className="btn outline"
+              onClick={() => refetch()}
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
 
           {items.map((p) => {
             const discount = getDiscountInfo(p);
@@ -4175,6 +4267,10 @@ function AdminProducts() {
                       });
 
                       await refresh();
+                      await queryClient.invalidateQueries({
+                        queryKey: ["products"],
+                        refetchType: "all",
+                      });
 
                       if (editingId === p._id) resetForm();
 
@@ -4199,9 +4295,8 @@ function AdminProducts() {
 /* Admin Banners                                                */
 /* ============================================================ */
 function AdminBanners() {
-  const [items, setItems] = useState([]);
+  const queryClient = useQueryClient();
   const [file, setFile] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const [f, setF] = useState({
@@ -4213,15 +4308,23 @@ function AdminBanners() {
     sortOrder: "0",
   });
 
-  async function refresh() {
-    setItems(await api("/admin/banners"));
-  }
+  const {
+    data: items = [],
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ["admin-banners"],
+    queryFn: () => apiFetch("/admin/banners"),
+    staleTime: 0,
+  });
 
-  useEffect(() => {
-    refresh()
-      .catch((e) => msg(e.message, "error"))
-      .finally(() => setLoading(false));
-  }, []);
+  async function refresh() {
+    await queryClient.invalidateQueries({ queryKey: ["admin-banners"] });
+    await queryClient.invalidateQueries({
+      queryKey: ["banners"],
+      refetchType: "all",
+    });
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -4374,7 +4477,16 @@ function AdminBanners() {
         <Loader text="Loading banners" />
       ) : (
         <div className="box">
-          <h2>Current banners</h2>
+          <div className="flex items-center justify-between">
+            <h2>Current banners</h2>
+            <button
+              type="button"
+              className="btn outline"
+              onClick={() => refetch()}
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
 
           {items.map((b) => (
             <div className="bannerrow" key={b._id}>
@@ -4442,7 +4554,7 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* New Orders — TanStack Query (live)                            */
+/* New Orders — TanStack Query (live) + সব জায়গায় invalidate    */
 /* ============================================================ */
 function NewOrders() {
   const queryClient = useQueryClient();
@@ -4454,7 +4566,7 @@ function NewOrders() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["new-orders"],
+    queryKey: orderKeys.newOrders,
     queryFn: () => apiFetch("/admin/orders/new"),
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
@@ -4472,8 +4584,21 @@ function NewOrders() {
 
       msg(`Order marked as ${nextStatus}`);
 
-      await queryClient.invalidateQueries({ queryKey: ["new-orders"] });
-      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      // ✅ সব order-related ক্যাশে force refetch — user প্রোফাইলও আপডেট হবে
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.newOrders,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
     } catch (e) {
       msg(e.message, "error");
     }
@@ -4742,7 +4867,7 @@ function AdminOrders() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["admin-orders"],
+    queryKey: orderKeys.adminList,
     queryFn: () => apiFetch("/admin/orders"),
     refetchInterval: 5000,
     refetchIntervalInBackground: true,
@@ -4755,7 +4880,10 @@ function AdminOrders() {
     if (showSpinner) {
       await refetch();
     } else {
-      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      await queryClient.invalidateQueries({
+        queryKey: orderKeys.adminList,
+        refetchType: "all",
+      });
     }
   }
 
@@ -4766,8 +4894,22 @@ function AdminOrders() {
         body: JSON.stringify(patch),
       });
       msg("Order updated");
-      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-      await queryClient.invalidateQueries({ queryKey: ["new-orders"] });
+
+      // ✅ admin + new-orders + user-side সব order query force refetch
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.newOrders,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
     } catch (e) {
       msg(e.message, "error");
     }

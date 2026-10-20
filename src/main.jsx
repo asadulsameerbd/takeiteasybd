@@ -7,14 +7,17 @@ import App from "./App.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import "./styles.css";
 
-// ✅ TanStack Query client — global config
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0, // Always fresh — live data
-      refetchOnWindowFocus: true, // Tab focus e refresh
-      refetchOnMount: true, // Component mount e refresh
-      retry: 1, // 1 bar retry
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+      retry: 1,
+    },
+    mutations: {
+      retry: 0,
     },
   },
 });

@@ -9,41 +9,55 @@ import { api } from "../api";
 
 const C = createContext(null);
 
-// ✅ Helper: read admin token from localStorage (tie_auth)
+function readCustomer() {
+  try {
+    const raw = localStorage.getItem("tie_customer");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function readAdminToken() {
   try {
     const raw = localStorage.getItem("tie_auth");
-    if (!raw) return "";
-    const parsed = JSON.parse(raw);
-    return parsed?.adminToken || "";
+    return raw ? JSON.parse(raw)?.adminToken || "" : "";
   } catch {
     return "";
   }
 }
 
-// ✅ Helper: save admin token to localStorage (tie_auth)
+function saveCustomer(data) {
+  try {
+    if (!data) localStorage.removeItem("tie_customer");
+    else localStorage.setItem("tie_customer", JSON.stringify(data));
+  } catch {}
+}
+
 function saveAdminToken(token) {
   try {
-    if (!token) {
-      localStorage.removeItem("tie_auth");
-      return;
-    }
-    localStorage.setItem("tie_auth", JSON.stringify({ adminToken: token }));
-  } catch {
-    // ignore
-  }
+    if (!token) localStorage.removeItem("tie_auth");
+    else
+      localStorage.setItem("tie_auth", JSON.stringify({ adminToken: token }));
+  } catch {}
+}
+
+// ✅ user object-এ সবসময় `id` আর `_id` দুটোই থাকবে (defensive)
+function normalizeUser(user) {
+  if (!user) return null;
+  const id = user.id || user._id;
+  return { ...user, id, _id: id };
+}
+
+function normalizeCustomer(payload) {
+  if (!payload?.token) return null;
+  return { ...payload, user: normalizeUser(payload.user) };
 }
 
 export function AuthProvider({ children }) {
-  const [customer, setCustomer] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("tie_customer") || "null");
-    } catch {
-      return null;
-    }
-  });
-
-  // ✅ Admin token now stored in localStorage "tie_auth" so api.js can read it
+  const [customer, setCustomer] = useState(() =>
+    normalizeCustomer(readCustomer()),
+  );
   const [adminToken, setAdminToken] = useState(() => readAdminToken());
 
   useEffect(() => {
@@ -57,9 +71,10 @@ export function AuthProvider({ children }) {
       body: JSON.stringify(data),
       auth: false,
     });
-    localStorage.setItem("tie_customer", JSON.stringify(x));
-    setCustomer(x);
-    return x;
+    const normalized = normalizeCustomer(x);
+    saveCustomer(normalized);
+    setCustomer(normalized);
+    return normalized;
   }
 
   async function registerCustomer(data) {
@@ -68,9 +83,10 @@ export function AuthProvider({ children }) {
       body: JSON.stringify(data),
       auth: false,
     });
-    localStorage.setItem("tie_customer", JSON.stringify(x));
-    setCustomer(x);
-    return x;
+    const normalized = normalizeCustomer(x);
+    saveCustomer(normalized);
+    setCustomer(normalized);
+    return normalized;
   }
 
   function logoutCustomer() {
@@ -84,10 +100,10 @@ export function AuthProvider({ children }) {
       method: "PATCH",
       body: JSON.stringify(data),
     });
-    const n = { ...customer, user: x.user };
-    localStorage.setItem("tie_customer", JSON.stringify(n));
+    const n = { ...customer, user: normalizeUser(x.user) };
+    saveCustomer(n);
     setCustomer(n);
-    return x.user;
+    return n.user;
   }
 
   async function loginAdmin(data) {
@@ -96,15 +112,12 @@ export function AuthProvider({ children }) {
       body: JSON.stringify(data),
       auth: false,
     });
-
-    // ✅ Save token in localStorage "tie_auth" as { adminToken }
     saveAdminToken(x.token);
     setAdminToken(x.token);
     return x;
   }
 
   function logoutAdmin() {
-    // ✅ Clear from localStorage
     saveAdminToken("");
     setAdminToken("");
   }
