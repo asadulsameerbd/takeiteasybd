@@ -2195,3 +2195,137 @@ main.wrap.page.tie-account-page {
     height: 38px;
   }
 }
+
+/* loading spinner  */
+/* ============================================================ */
+/* TAKE IT EASY — Custom Loader Animations                      */
+/* Copy this whole block into index.css                         */
+/* ============================================================ */
+
+@keyframes tie-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tie-dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes tie-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tie-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  animation: tie-fade-in 0.4s ease-out both;
+}
+
+.tie-loader-ring {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(245, 73, 0, 0.15) 120deg,
+    #f54900 300deg,
+    #f54900 360deg
+  );
+  animation: tie-spin 1.05s linear infinite;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 6px),
+    #000 calc(100% - 6px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 6px),
+    #000 calc(100% - 6px)
+  );
+}
+
+.tie-loader-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 24px rgba(245, 73, 0, 0.25);
+}
+
+.tie-loader-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.tie-loader-dots span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f54900;
+  animation: tie-dot-bounce 1.2s infinite ease-in-out both;
+}
+
+.tie-loader-dots span:nth-child(1) {
+  animation-delay: -0.24s;
+}
+.tie-loader-dots span:nth-child(2) {
+  animation-delay: -0.12s;
+}
+.tie-loader-dots span:nth-child(3) {
+  animation-delay: 0s;
+}
+
+.tie-loader-text {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #a8a29e;
+  text-align: center;
+}
+
+.tie-loader-text strong {
+  color: #1c1917;
+  font-weight: 800;
+}
+
+/* Inline loader (for buttons) */
+.tie-inline-loader {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: tie-spin 0.8s linear infinite;
+}
+
+.tie-inline-loader.dark {
+  border-color: rgba(28, 25, 23, 0.2);
+  border-top-color: #1c1917;
+}

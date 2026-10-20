@@ -60,6 +60,37 @@ const msg = (title, icon = "success") =>
     confirmButtonColor: "#F54900",
   });
 
+/* ============================================================ */
+/* Reusable Loaders                                             */
+/* ============================================================ */
+function Loader({ text = "Loading", fullScreen = false }) {
+  return (
+    <div
+      className={
+        fullScreen
+          ? "flex min-h-screen w-full flex-col items-center justify-center gap-4 bg-[#faf9f6]"
+          : "flex w-full flex-col items-center justify-center gap-4 py-16"
+      }
+    >
+      <div className="tie-loader">
+        <div className="tie-loader-ring" />
+        <div className="tie-loader-dots">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+      <p className="tie-loader-text">
+        <strong>Take It Easy</strong> · {text}...
+      </p>
+    </div>
+  );
+}
+
+function InlineLoader({ dark = false }) {
+  return <span className={`tie-inline-loader ${dark ? "dark" : ""}`} />;
+}
+
 /* Hind Siliguri Font */
 function FontSetup() {
   useEffect(() => {
@@ -107,7 +138,6 @@ function useCart() {
   }, [cart]);
 
   const add = (p, size = "", notify = true) => {
-    // ✅ Stock out guard
     if (Number(p.stock || 0) <= 0) {
       if (notify) {
         msg("এই পণ্যটি স্টক আউট।", "warning");
@@ -328,7 +358,7 @@ function Layout() {
 }
 
 /* ============================================================ */
-/* Product Card — with Stock Out auto display                   */
+/* Product Card — Stock Out auto display                        */
 /* ============================================================ */
 function Card({ p, add }) {
   const hasSale = Number(p.compareAtPrice) > Number(p.price);
@@ -358,7 +388,6 @@ function Card({ p, add }) {
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
 
-        {/* ✅ Stock Out badge (top priority over Sale) */}
         {isOutOfStock ? (
           <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-stone-900 px-2 py-1 text-[9px] font-extrabold uppercase leading-tight tracking-wide text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px]">
             Stock Out
@@ -402,7 +431,6 @@ function Card({ p, add }) {
           )}
         </div>
 
-        {/* ✅ Add to Cart / Stock Out button */}
         {isOutOfStock ? (
           <button
             type="button"
@@ -456,17 +484,21 @@ function Heading({ tag, title, desc }) {
   );
 }
 
-/* Home Page */
+/* ============================================================ */
+/* Home Page — with Loader                                      */
+/* ============================================================ */
 function Home() {
   const { add } = useContext(C);
   const [products, setProducts] = useState([]);
   const [banners, setBanners] = useState([]);
   const [slide, setSlide] = useState(0);
   const [visible, setVisible] = useState(8);
+  const [loading, setLoading] = useState(true);
 
   const sentinel = React.useRef(null);
 
   useEffect(() => {
+    setLoading(true);
     Promise.all([
       api("/products", { auth: false }),
       api("/banners", { auth: false }),
@@ -475,7 +507,8 @@ function Home() {
         setProducts(p);
         setBanners(b);
       })
-      .catch((e) => msg(e.message, "error"));
+      .catch((e) => msg(e.message, "error"))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -569,7 +602,9 @@ function Home() {
           <Link to="/products">Shop all products ↗</Link>
         </div>
 
-        {products.length ? (
+        {loading ? (
+          <Loader text="Fetching the good stuff" />
+        ) : products.length ? (
           <>
             <div className="grid">
               {products.slice(0, visible).map((p) => (
@@ -594,14 +629,16 @@ function Home() {
   );
 }
 
-/* Products Page */
-
+/* ============================================================ */
+/* Products Page — with Loader                                  */
+/* ============================================================ */
 function Products() {
   const { add } = useContext(C);
 
   const [products, setProducts] = useState([]);
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState(12);
+  const [loading, setLoading] = useState(true);
 
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [minPrice, setMinPrice] = useState(0);
@@ -611,6 +648,7 @@ function Products() {
 
   useEffect(() => {
     let live = true;
+    setLoading(true);
 
     api(`/products${q.trim() ? "?q=" + encodeURIComponent(q.trim()) : ""}`, {
       auth: false,
@@ -623,6 +661,9 @@ function Products() {
       })
       .catch((e) => {
         if (live) msg(e.message, "error");
+      })
+      .finally(() => {
+        if (live) setLoading(false);
       });
 
     return () => {
@@ -702,7 +743,7 @@ function Products() {
           </div>
           <div className="flex items-center gap-2 text-sm text-neutral-500">
             <span className="font-bold text-neutral-900">
-              {filteredProducts.length}
+              {loading ? "—" : filteredProducts.length}
             </span>
             {filteredProducts.length === 1 ? "product" : "products"} found
           </div>
@@ -820,11 +861,17 @@ function Products() {
           <div className="min-w-0 w-full flex-1">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-neutral-500">
-                Showing{" "}
-                <span className="font-bold text-neutral-900">
-                  {Math.min(visible, filteredProducts.length)}
-                </span>{" "}
-                of {filteredProducts.length} products
+                {loading ? (
+                  "Loading products..."
+                ) : (
+                  <>
+                    Showing{" "}
+                    <span className="font-bold text-neutral-900">
+                      {Math.min(visible, filteredProducts.length)}
+                    </span>{" "}
+                    of {filteredProducts.length} products
+                  </>
+                )}
               </p>
               {activeFilters && (
                 <button
@@ -836,7 +883,9 @@ function Products() {
               )}
             </div>
 
-            {filteredProducts.length > 0 ? (
+            {loading ? (
+              <Loader text="Fetching products" />
+            ) : filteredProducts.length > 0 ? (
               <>
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 sm:gap-5">
                   {filteredProducts.slice(0, visible).map((p) => (
@@ -1063,7 +1112,7 @@ function FilterBox({
 }
 
 /* ============================================================ */
-/* Product Details — with Stock Out auto display                */
+/* Product Details — with Loader + Stock Out                    */
 /* ============================================================ */
 function Product() {
   const { slug } = useParams();
@@ -1075,19 +1124,26 @@ function Product() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [activeImage, setActiveImage] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     api("/products/" + slug, { auth: false })
       .then((d) => {
         setData(d);
         setSize(d.product.sizes?.[0] || "");
         setActiveImage(0);
       })
-      .catch((e) => msg(e.message, "error"));
+      .catch((e) => msg(e.message, "error"))
+      .finally(() => setLoading(false));
   }, [slug]);
 
-  if (!data) {
-    return <main className="wrap page">Loading product...</main>;
+  if (loading || !data) {
+    return (
+      <main className="wrap page">
+        <Loader text="Loading product" />
+      </main>
+    );
   }
 
   const p = data.product;
@@ -1148,7 +1204,6 @@ function Product() {
                 </span>
               )}
 
-              {/* ✅ Stock Out overlay */}
               {isOutOfStock && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/25 backdrop-blur-[1px]">
                   <span className="rotate-[-8deg] rounded-lg bg-stone-900 px-5 py-2.5 text-base font-black uppercase tracking-widest text-white shadow-xl sm:text-lg">
@@ -1188,7 +1243,6 @@ function Product() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="eyebrow">{p.category}</span>
 
-            {/* ✅ Stock Out badge next to category */}
             {isOutOfStock && (
               <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-red-700">
                 <XCircle size={11} /> Stock Out
@@ -1256,7 +1310,6 @@ function Product() {
             </div>
           )}
 
-          {/* ✅ Action Buttons — disabled when out of stock */}
           <div className="buyrow mt-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:mt-8">
             {isOutOfStock ? (
               <>
@@ -2359,8 +2412,15 @@ function Checkout() {
                     disabled={busy}
                     className="mt-4 hidden min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex"
                   >
-                    {busy ? "Placing..." : "Place order"}
-                    {!busy && <ArrowRight size={16} />}
+                    {busy ? (
+                      <>
+                        <InlineLoader /> Placing...
+                      </>
+                    ) : (
+                      <>
+                        Place order <ArrowRight size={16} />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -2385,8 +2445,15 @@ function Checkout() {
                 disabled={busy}
                 className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busy ? "Placing..." : "Place order"}
-                {!busy && <ArrowRight size={15} />}
+                {busy ? (
+                  <>
+                    <InlineLoader /> Placing...
+                  </>
+                ) : (
+                  <>
+                    Place order <ArrowRight size={15} />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -2515,9 +2582,15 @@ function Track() {
           <button
             type="submit"
             disabled={loading}
-            className="mt-6 flex min-h-12 w-full items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Searching..." : "Track Order"}
+            {loading ? (
+              <>
+                <InlineLoader /> Searching...
+              </>
+            ) : (
+              "Track Order"
+            )}
           </button>
 
           <p className="mt-4 text-center text-xs leading-5 text-neutral-400">
@@ -3059,10 +3132,7 @@ function Profile() {
           </div>
 
           {loadingOrders ? (
-            <div className="tie-orders-message">
-              <div className="tie-spinner" />
-              <p>Loading your orders...</p>
-            </div>
+            <Loader text="Loading your orders" />
           ) : orderError ? (
             <div className="tie-orders-message">
               <p className="text-red-600">{orderError}</p>
@@ -3397,18 +3467,22 @@ function Dashboard() {
         </div>
       )}
 
-      <div className="stats">
-        {["Products", "Banners", "Orders"].map((name, index) => (
-          <Link
-            className="stat"
-            to={["/admin/products", "/admin/banners", "/admin/orders"][index]}
-            key={name}
-          >
-            {name}
-            <strong>{loading ? "..." : counts[index]}</strong>
-          </Link>
-        ))}
-      </div>
+      {loading ? (
+        <Loader text="Loading dashboard" />
+      ) : (
+        <div className="stats">
+          {["Products", "Banners", "Orders"].map((name, index) => (
+            <Link
+              className="stat"
+              to={["/admin/products", "/admin/banners", "/admin/orders"][index]}
+              key={name}
+            >
+              {name}
+              <strong>{counts[index]}</strong>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <p>
         Use the navigation to manage the catalogue, homepage banners, orders and
@@ -3424,6 +3498,7 @@ function Dashboard() {
 function AdminProducts() {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [files, setFiles] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -3451,7 +3526,9 @@ function AdminProducts() {
   }
 
   useEffect(() => {
-    refresh().catch((e) => msg(e.message, "error"));
+    refresh()
+      .catch((e) => msg(e.message, "error"))
+      .finally(() => setLoading(false));
   }, []);
 
   function resetForm() {
@@ -3645,71 +3722,83 @@ function AdminProducts() {
         </div>
 
         <button className="btn orange" disabled={busy}>
-          {busy ? "Saving..." : editingId ? "Save changes" : "Save product"}{" "}
-          {editingId ? <Pencil size={16} /> : <Plus size={16} />}
+          {busy ? (
+            <>
+              <InlineLoader dark /> Saving...
+            </>
+          ) : (
+            <>
+              {editingId ? "Save changes" : "Save product"}{" "}
+              {editingId ? <Pencil size={16} /> : <Plus size={16} />}
+            </>
+          )}
         </button>
       </form>
 
-      <div className="box">
-        <h2>All products ({items.length})</h2>
+      {loading ? (
+        <Loader text="Loading products" />
+      ) : (
+        <div className="box">
+          <h2>All products ({items.length})</h2>
 
-        {items.map((p) => (
-          <div className="adminrow" key={p._id}>
-            <img src={p.images?.[0] || "https://placehold.co/80x90"} alt="" />
+          {items.map((p) => (
+            <div className="adminrow" key={p._id}>
+              <img src={p.images?.[0] || "https://placehold.co/80x90"} alt="" />
 
-            <div>
-              <b>{p.title}</b>
-              <small>
-                {money(p.price)} · {p.category} ·{" "}
-                {Number(p.stock || 0) <= 0 ? (
-                  <span className="font-bold text-red-600">STOCK OUT</span>
-                ) : (
-                  <>Stock {p.stock}</>
-                )}
-                {p.images?.length > 1 && (
-                  <>
-                    {" "}
-                    · <ImageIcon size={11} className="inline" />{" "}
-                    {p.images.length} images
-                  </>
-                )}
-              </small>
+              <div>
+                <b>{p.title}</b>
+                <small>
+                  {money(p.price)} · {p.category} ·{" "}
+                  {Number(p.stock || 0) <= 0 ? (
+                    <span className="font-bold text-red-600">STOCK OUT</span>
+                  ) : (
+                    <>Stock {p.stock}</>
+                  )}
+                  {p.images?.length > 1 && (
+                    <>
+                      {" "}
+                      · <ImageIcon size={11} className="inline" />{" "}
+                      {p.images.length} images
+                    </>
+                  )}
+                </small>
+              </div>
+
+              <button
+                className="btn outline"
+                onClick={() => startEdit(p)}
+                type="button"
+              >
+                <Pencil size={14} /> Edit
+              </button>
+
+              <button
+                className="remove"
+                type="button"
+                onClick={async () => {
+                  if (!confirm("Delete " + p.title + "?")) return;
+
+                  try {
+                    await api("/admin/products/" + p._id, {
+                      method: "DELETE",
+                    });
+
+                    await refresh();
+
+                    if (editingId === p._id) resetForm();
+
+                    msg("Product deleted");
+                  } catch (e) {
+                    msg(e.message, "error");
+                  }
+                }}
+              >
+                <Trash2 /> Delete
+              </button>
             </div>
-
-            <button
-              className="btn outline"
-              onClick={() => startEdit(p)}
-              type="button"
-            >
-              <Pencil size={14} /> Edit
-            </button>
-
-            <button
-              className="remove"
-              type="button"
-              onClick={async () => {
-                if (!confirm("Delete " + p.title + "?")) return;
-
-                try {
-                  await api("/admin/products/" + p._id, {
-                    method: "DELETE",
-                  });
-
-                  await refresh();
-
-                  if (editingId === p._id) resetForm();
-
-                  msg("Product deleted");
-                } catch (e) {
-                  msg(e.message, "error");
-                }
-              }}
-            >
-              <Trash2 /> Delete
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -3718,6 +3807,7 @@ function AdminProducts() {
 function AdminBanners() {
   const [items, setItems] = useState([]);
   const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const [f, setF] = useState({
     title: "",
@@ -3733,7 +3823,9 @@ function AdminBanners() {
   }
 
   useEffect(() => {
-    refresh().catch((e) => msg(e.message, "error"));
+    refresh()
+      .catch((e) => msg(e.message, "error"))
+      .finally(() => setLoading(false));
   }, []);
 
   async function submit(e) {
@@ -3820,69 +3912,73 @@ function AdminBanners() {
         </button>
       </form>
 
-      <div className="box">
-        <h2>Current banners</h2>
+      {loading ? (
+        <Loader text="Loading banners" />
+      ) : (
+        <div className="box">
+          <h2>Current banners</h2>
 
-        {items.map((b) => (
-          <div className="bannerrow" key={b._id}>
-            <img src={b.imageUrl} alt={b.title} />
+          {items.map((b) => (
+            <div className="bannerrow" key={b._id}>
+              <img src={b.imageUrl} alt={b.title} />
 
-            <div>
-              <b>{b.title || "Untitled banner"}</b>
-              <p>{b.subtitle}</p>
-              <button
-                className="btn outline"
-                onClick={async () => {
-                  const imageUrl = prompt("New banner image URL", b.imageUrl);
+              <div>
+                <b>{b.title || "Untitled banner"}</b>
+                <p>{b.subtitle}</p>
+                <button
+                  className="btn outline"
+                  onClick={async () => {
+                    const imageUrl = prompt("New banner image URL", b.imageUrl);
 
-                  if (!imageUrl) return;
+                    if (!imageUrl) return;
 
-                  try {
+                    try {
+                      await api("/admin/banners/" + b._id, {
+                        method: "PATCH",
+                        body: JSON.stringify({ imageUrl }),
+                      });
+
+                      await refresh();
+                      msg("Banner image updated");
+                    } catch (e) {
+                      msg(e.message, "error");
+                    }
+                  }}
+                >
+                  Change image
+                </button>{" "}
+                <button
+                  className="btn outline"
+                  onClick={async () => {
                     await api("/admin/banners/" + b._id, {
                       method: "PATCH",
-                      body: JSON.stringify({ imageUrl }),
+                      body: JSON.stringify({ active: !b.active }),
                     });
 
                     await refresh();
-                    msg("Banner image updated");
-                  } catch (e) {
-                    msg(e.message, "error");
-                  }
-                }}
-              >
-                Change image
-              </button>{" "}
-              <button
-                className="btn outline"
-                onClick={async () => {
-                  await api("/admin/banners/" + b._id, {
-                    method: "PATCH",
-                    body: JSON.stringify({ active: !b.active }),
-                  });
+                  }}
+                >
+                  {b.active ? "Hide" : "Show"}
+                </button>{" "}
+                <button
+                  className="btn outline"
+                  onClick={async () => {
+                    if (confirm("Delete banner?")) {
+                      await api("/admin/banners/" + b._id, {
+                        method: "DELETE",
+                      });
 
-                  await refresh();
-                }}
-              >
-                {b.active ? "Hide" : "Show"}
-              </button>{" "}
-              <button
-                className="btn outline"
-                onClick={async () => {
-                  if (confirm("Delete banner?")) {
-                    await api("/admin/banners/" + b._id, {
-                      method: "DELETE",
-                    });
-
-                    await refresh();
-                  }
-                }}
-              >
-                Delete
-              </button>
+                      await refresh();
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -4090,7 +4186,6 @@ function AdminOrders() {
         </button>
       </div>
 
-      {/* Stats cards */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard
           label="Total orders"
@@ -4136,7 +4231,6 @@ function AdminOrders() {
         </div>
       )}
 
-      {/* Filter tabs + search */}
       <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:p-4">
         <div className="-mx-1 flex flex-1 gap-1.5 overflow-x-auto px-1">
           {tabs.map((t) => (
@@ -4184,14 +4278,9 @@ function AdminOrders() {
         </div>
       </div>
 
-      {/* Orders list */}
       {loading ? (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-12 text-center">
-          <RefreshCw
-            size={26}
-            className="mx-auto animate-spin text-neutral-400"
-          />
-          <p className="mt-3 text-sm text-neutral-500">Loading orders...</p>
+        <div className="rounded-2xl border border-neutral-200 bg-white">
+          <Loader text="Loading orders" />
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
@@ -4223,7 +4312,6 @@ function AdminOrders() {
                 key={o._id}
                 className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition hover:border-neutral-300"
               >
-                {/* Header row */}
                 <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-white">
@@ -4292,10 +4380,8 @@ function AdminOrders() {
                   </div>
                 </div>
 
-                {/* Expanded details */}
                 {expanded && (
                   <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-2">
-                    {/* Left column: customer + items */}
                     <div className="space-y-4">
                       <div>
                         <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
@@ -4401,7 +4487,6 @@ function AdminOrders() {
                       </div>
                     </div>
 
-                    {/* Right column: payment + status controls */}
                     <div className="space-y-4">
                       <div>
                         <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
