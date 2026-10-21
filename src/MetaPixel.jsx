@@ -12,6 +12,7 @@ export default function MetaPixel() {
   useEffect(() => {
     if (!PIXEL_ID || typeof window === "undefined") return;
 
+    // পিক্সেল স্ক্রিপ্ট লোড করা
     if (!window.fbq) {
       !(function (f, b, e, v, n, t, s) {
         if (f.fbq) return;
@@ -38,25 +39,34 @@ export default function MetaPixel() {
       );
     }
 
+    // পিক্সেল ইনিশিয়ালাইজ করা (টেস্ট কোড সহ)
     if (!window.__takeItEasyNewPixelInitialized) {
-      window.fbq("init", PIXEL_ID);
+      if (window.fbq) {
+        // ✅ এখানে TEST24827 যোগ করা হয়েছে
+        window.fbq("init", PIXEL_ID, { test_event_code: "TEST24827" });
+      }
       window.__takeItEasyNewPixelInitialized = true;
     }
   }, []);
 
   // 2. PageView — শুধু pathname change-এ (search param নয়)
   useEffect(() => {
-    if (!window.fbq || !window.__takeItEasyNewPixelInitialized) return;
+    // পিক্সেল রেডি হওয়ার আগেই যেন ট্র্যাকিং মিস না হয়, তাই চেক দেওয়া হলো
+    if (!window.__takeItEasyNewPixelInitialized) return;
 
     const currentPage = location.pathname;
     if (lastPage.current === currentPage) return;
     lastPage.current = currentPage;
 
-    // render settle হওয়ার পর track
+    // রেন্ডার সেটেল হওয়ার পর PageView ট্র্যাক করা
     const id = setTimeout(() => {
-      try {
-        window.fbq("track", "PageView");
-      } catch (e) {}
+      if (window.fbq) {
+        try {
+          window.fbq("track", "PageView");
+        } catch (e) {
+          console.error("Meta Pixel PageView Error:", e);
+        }
+      }
     }, 0);
 
     return () => clearTimeout(id);
