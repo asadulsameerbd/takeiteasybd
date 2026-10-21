@@ -3,6 +3,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -47,6 +48,7 @@ import {
   Bell,
 } from "lucide-react";
 import MetaPixel from "./MetaPixel";
+import pixel from "./lib/pixel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
 import { api, apiFetch, fileData } from "./api";
@@ -187,6 +189,11 @@ function useCart() {
           ];
     });
 
+    // ✅ Meta Pixel: AddToCart (notify=true হলেই — Buy Now-এ duplicate এড়াতে)
+    if (notify) {
+      pixel.addToCart(p, 1, size);
+    }
+
     if (notify) {
       Swal.fire({
         toast: true,
@@ -217,7 +224,14 @@ function useCart() {
       ),
     );
 
-  const remove = (key) => setCart((old) => old.filter((i) => i.key !== key));
+  const remove = (key) => {
+    // ✅ Meta Pixel: RemoveFromCart (remove করার আগে item খুঁজে নিন)
+    const itemToRemove = cart.find((i) => i.key === key);
+    if (itemToRemove) {
+      pixel.removeFromCart(itemToRemove);
+    }
+    setCart((old) => old.filter((i) => i.key !== key));
+  };
 
   return {
     cart,
@@ -800,6 +814,24 @@ function Products() {
     };
   }, [q]);
 
+  // ✅ Meta Pixel: Search event (debounced 1s)
+  useEffect(() => {
+    if (!q.trim()) return;
+    const t = setTimeout(() => {
+      pixel.search(q);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // ✅ Meta Pixel: ViewCategory event (category change হলে একবার)
+  const lastCategoryRef = useRef(null);
+  useEffect(() => {
+    if (selectedCategory === "All") return;
+    if (lastCategoryRef.current === selectedCategory) return;
+    lastCategoryRef.current = selectedCategory;
+    pixel.viewCategory(selectedCategory);
+  }, [selectedCategory]);
+
   const categories = [
     "All",
     ...new Set(
@@ -1255,6 +1287,9 @@ function Product() {
   const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Meta Pixel: ViewContent duplicate prevention
+  const trackedProductIdRef = useRef(null);
+
   useEffect(() => {
     setLoading(true);
     api("/products/" + slug, { auth: false })
@@ -1266,6 +1301,19 @@ function Product() {
       .catch((e) => msg(e.message, "error"))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  // ✅ Meta Pixel: ViewContent (একবার per product, pixel ready হতে 300ms delay)
+  useEffect(() => {
+    if (!data?.product) return;
+    if (trackedProductIdRef.current === data.product._id) return;
+    trackedProductIdRef.current = data.product._id;
+
+    const id = setTimeout(() => {
+      pixel.viewContent(data.product);
+    }, 300);
+
+    return () => clearTimeout(id);
+  }, [data?.product?._id]);
 
   if (loading || !data) {
     return (
@@ -1492,6 +1540,10 @@ function Product() {
                     if (p.sizes?.length && !size) {
                       return msg("Please select a size.", "warning");
                     }
+
+                    // ✅ Buy Now: notify=false, তাই AddToCart fire হবে না।
+                    // তবে pixel-এ AddToCart track করি এখানে (কারণ user চাইছে)
+                    pixel.addToCart(p, 1, size);
 
                     add(p, size, false);
                     location.href = "/checkout";
@@ -1970,6 +2022,26 @@ function Checkout() {
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
+  // ✅ Meta Pixel: InitiateCheckout (mount-এ একবার, cart থাকলে)
+  const checkoutInitiatedRef = useRef(false);
+  useEffect(() => {
+    if (!cart.length || checkoutInitiatedRef.current) return;
+    checkoutInitiatedRef.current = true;
+    pixel.initiateCheckout(cart, total, itemCount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-এ একবার
+
+  // ✅ Meta Pixel: AddPaymentInfo (method change হলে একবার)
+  const lastMethodRef = useRef(method);
+  useEffect(() => {
+    if (lastMethodRef.current === method) return;
+    lastMethodRef.current = method;
+    if (cart.length) {
+      pixel.addPaymentInfo(cart, total, itemCount, method);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method]);
+
   const methods = [
     {
       v: "cod",
@@ -2064,6 +2136,17 @@ function Checkout() {
         throw new Error("Enter transaction ID.");
       }
 
+      // ✅ Purchase event-এর জন্য cart snapshot (কারণ success-এর পর clear হবে)
+      const purchasePayload = {
+        cart: cart.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          price: Number(i.price),
+          title: i.title,
+        })),
+        numItems: itemCount,
+      };
+
       const r = await api("/orders", {
         method: "POST",
         auth: false,
@@ -2081,6 +2164,14 @@ function Checkout() {
           paymentScreenshot,
           token: customer?.token || "",
         }),
+      });
+
+      // ✅ Meta Pixel: Purchase (সবচেয়ে গুরুত্বপূর্ণ!)
+      pixel.purchase({
+        cart: purchasePayload.cart,
+        total: Number(r.total),
+        numItems: purchasePayload.numItems,
+        orderId: r.orderNumber,
       });
 
       setCart([]);
@@ -2993,6 +3084,9 @@ function Contact() {
   ];
 
   const openWhatsApp = (message) => {
+    // ✅ Meta Pixel: Lead event
+    pixel.lead("whatsapp_contact");
+
     window.open(
       `https://wa.me/8801933200699?text=${encodeURIComponent(message)}`,
       "_blank",
@@ -3227,6 +3321,9 @@ function Register() {
 
     try {
       await registerCustomer(f);
+
+      // ✅ Meta Pixel: CompleteRegistration
+      pixel.completeRegistration();
 
       queryClient.removeQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({
