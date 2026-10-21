@@ -46,6 +46,7 @@ import {
   Percent,
   Bell,
 } from "lucide-react";
+import MetaPixel from "./MetaPixel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
 import { api, apiFetch, fileData } from "./api";
@@ -5556,7 +5557,7 @@ export default function App() {
   return (
     <C.Provider value={cart}>
       <FontSetup />
-
+      <MetaPixel />
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
