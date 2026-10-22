@@ -856,6 +856,12 @@ function Products() {
       return categoryMatch && priceMatch;
     })
     .sort((a, b) => {
+      // ✅ ১) Stock out সবসময় শেষে, stock in আগে
+      const aOut = Number(a.stock || 0) <= 0;
+      const bOut = Number(b.stock || 0) <= 0;
+      if (aOut !== bOut) return aOut ? 1 : -1;
+
+      // ✅ ২) একই stock অবস্থার ভেতরে user-এর বেছে নেওয়া sort প্রয়োগ
       switch (sortBy) {
         case "price-low":
           return Number(a.price || 0) - Number(b.price || 0);
