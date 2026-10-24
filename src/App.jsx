@@ -46,6 +46,8 @@ import {
   Tag,
   Percent,
   Bell,
+  Download,
+  Calendar,
 } from "lucide-react";
 import MetaPixel from "./MetaPixel";
 import pixel from "./lib/pixel";
@@ -192,7 +194,6 @@ function useCart() {
   }, [cart]);
 
   const add = (p, size = "", notify = true) => {
-    // ✅ size-specific stock check
     const available = size ? getSizeStock(p, size) : Number(p.stock || 0);
 
     if (available <= 0) {
@@ -458,7 +459,6 @@ function getDiscountInfo(p) {
 /* Product Card                                                 */
 /* ============================================================ */
 function Card({ p, add }) {
-  // ✅ sizeStock-aware stock check
   const isOutOfStock = isProductOutOfStock(p);
   const discount = getDiscountInfo(p);
   const hasSale = discount.percent > 0;
@@ -660,7 +660,6 @@ function Home() {
     };
   }, []);
 
-  // ✅ sizeStock-aware filter
   const inStockProducts = products.filter((p) => !isProductOutOfStock(p));
 
   const b = banners[slide];
@@ -889,7 +888,6 @@ function Products() {
       return categoryMatch && priceMatch;
     })
     .sort((a, b) => {
-      // ✅ sizeStock-aware sort
       const aOut = isProductOutOfStock(a);
       const bOut = isProductOutOfStock(b);
       if (aOut !== bOut) return aOut ? 1 : -1;
@@ -1311,7 +1309,7 @@ function FilterBox({
 }
 
 /* ============================================================ */
-/* Product Details — ✅ size-wise stock                          */
+/* Product Details                                              */
 /* ============================================================ */
 function Product() {
   const { slug } = useParams();
@@ -1332,7 +1330,6 @@ function Product() {
     api("/products/" + slug, { auth: false })
       .then((d) => {
         setData(d);
-        // ✅ প্রথম available size auto-select
         const sizes = d.product.sizes || [];
         const firstAvailable = sizes.find((s) => isSizeAvailable(d.product, s));
         setSize(firstAvailable || sizes[0] || "");
@@ -1505,7 +1502,6 @@ function Product() {
             </p>
           )}
 
-          {/* ✅ SIZE-WISE STOCK */}
           {p.sizes?.length > 0 && (
             <div className="sizes mt-6">
               <b className="mb-3 block text-sm text-neutral-900 sm:text-base">
@@ -2053,7 +2049,7 @@ function Cart() {
 }
 
 /* ============================================================ */
-/* Checkout — unchanged                                          */
+/* Checkout                                                     */
 /* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
@@ -3936,6 +3932,10 @@ function AdminNav() {
       <Link to="/admin/banners">Banners</Link>
       <Link to="/admin/orders">Orders</Link>
 
+      <Link to="/admin/reports" className="flex items-center gap-2">
+        <TrendingUp size={14} /> Reports
+      </Link>
+
       <Link to="/" target="_blank">
         View store ↗
       </Link>
@@ -4045,7 +4045,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products — ✅ size-wise stock                           */
+/* Admin Products                                               */
 /* ============================================================ */
 function AdminProducts() {
   const queryClient = useQueryClient();
@@ -4057,6 +4057,7 @@ function AdminProducts() {
   const emptyForm = {
     title: "",
     price: "",
+    cost: "",
     compareAtPrice: "",
     discountPercent: "",
     category: "Oversized T-shirt",
@@ -4108,6 +4109,7 @@ function AdminProducts() {
     setF({
       title: p.title || "",
       price: String(p.price ?? ""),
+      cost: String(p.cost ?? 0),
       compareAtPrice: String(p.compareAtPrice ?? ""),
       discountPercent: String(p.discountPercent ?? ""),
       category: p.category || "",
@@ -4183,7 +4185,6 @@ function AdminProducts() {
         images = [...uploaded, ...images];
       }
 
-      // ✅ clean sizeStock — শুধু valid size-এর stock
       const cleanSizeStock = {};
       sizeList.forEach((s) => {
         cleanSizeStock[s] = Math.max(0, Number(f.sizeStock[s] || 0));
@@ -4192,6 +4193,7 @@ function AdminProducts() {
       const payload = {
         title: f.title,
         price: Number(f.price),
+        cost: Number(f.cost || 0),
         compareAtPrice: Number(f.compareAtPrice || 0),
         discountPercent: Number(f.discountPercent || 0),
         category: f.category,
@@ -4272,6 +4274,7 @@ function AdminProducts() {
           {[
             ["title", "Title"],
             ["price", "Price (৳)"],
+            ["cost", "Cost price (৳)"],
             ["compareAtPrice", "Compare-at price (original)"],
             ["discountPercent", "Discount % (auto or custom)"],
             ["category", "Category"],
@@ -4287,7 +4290,12 @@ function AdminProducts() {
               <input
                 value={f[k]}
                 type={
-                  ["price", "compareAtPrice", "discountPercent"].includes(k)
+                  [
+                    "price",
+                    "cost",
+                    "compareAtPrice",
+                    "discountPercent",
+                  ].includes(k)
                     ? "number"
                     : "text"
                 }
@@ -4296,13 +4304,14 @@ function AdminProducts() {
                 placeholder={
                   k === "discountPercent"
                     ? "Leave empty to auto-calc"
-                    : undefined
+                    : k === "cost"
+                      ? "কেনার দাম (profit হিসাবের জন্য)"
+                      : undefined
                 }
               />
             </label>
           ))}
 
-          {/* ✅ Per-size stock inputs */}
           {sizeList.length > 0 && (
             <label className="span">
               Stock per size{" "}
@@ -4339,7 +4348,6 @@ function AdminProducts() {
             </label>
           )}
 
-          {/* Legacy stock (size না থাকলে) */}
           {sizeList.length === 0 && (
             <label>
               Stock
@@ -4482,7 +4490,6 @@ function AdminProducts() {
                     )}
                   </small>
 
-                  {/* ✅ per-size stock preview */}
                   {hasSizeStock && (
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
                       {Object.entries(stockObj).map(([s, q]) => (
@@ -4808,7 +4815,7 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* New Orders — ✅ size দেখাও                                   */
+/* New Orders                                                   */
 /* ============================================================ */
 function NewOrders() {
   const queryClient = useQueryClient();
@@ -5003,7 +5010,6 @@ function NewOrders() {
                     <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
                       Items ({o.items?.length || 0})
                     </p>
-                    {/* ✅ size সহ দেখাও */}
                     <ul className="space-y-1 text-sm text-neutral-700">
                       {(o.items || []).map((i, idx) => (
                         <li key={idx} className="flex flex-wrap gap-1">
@@ -5062,7 +5068,7 @@ function NewOrders() {
 }
 
 /* ============================================================ */
-/* Admin Orders — ✅ size confirmed                              */
+/* Admin Orders — + Delivery Charge override                    */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -5180,6 +5186,32 @@ function AdminOrders() {
       ]);
 
       broadcastOrderChange("status-changed", { orderId: id, patch });
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+
+  async function updateDeliveryCharge(id, newCharge) {
+    const val = Math.max(0, Number(newCharge) || 0);
+    try {
+      await api(`/admin/orders/${id}/delivery-charge`, {
+        method: "PATCH",
+        body: JSON.stringify({ deliveryCharge: val }),
+      });
+      msg("Delivery charge updated");
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
+
+      broadcastOrderChange("status-changed", { orderId: id });
     } catch (e) {
       msg(e.message, "error");
     }
@@ -5685,6 +5717,53 @@ function AdminOrders() {
                         </div>
                       </div>
 
+                      {/* ✅ Delivery charge override */}
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Delivery charge (override)
+                        </h4>
+                        <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3">
+                          <p className="mb-2 text-xs text-neutral-700">
+                            Current:{" "}
+                            <b className="text-orange-700">
+                              {money(o.deliveryCharge)}
+                            </b>
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              defaultValue={o.deliveryCharge}
+                              onBlur={(e) => {
+                                const val = Number(e.target.value);
+                                if (val !== o.deliveryCharge) {
+                                  updateDeliveryCharge(o._id, val);
+                                }
+                              }}
+                              className="min-h-10 w-24 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-bold outline-none focus:border-orange-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateDeliveryCharge(o._id, 0)}
+                              className="min-h-10 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
+                            >
+                              Make Free
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateDeliveryCharge(o._id, 80)}
+                              className="min-h-10 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
+                            >
+                              Reset ৳80
+                            </button>
+                          </div>
+                          <p className="mt-2 text-[10px] text-neutral-500">
+                            পরিবর্তন করলে customer-এর total automatically update
+                            হবে।
+                          </p>
+                        </div>
+                      </div>
+
                       <div>
                         <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
                           Update status
@@ -5750,6 +5829,395 @@ function AdminOrders() {
             );
           })}
         </div>
+      )}
+    </section>
+  );
+}
+
+/* ============================================================ */
+/* Admin Reports — Profit / Loss / Waste / CSV                  */
+/* ============================================================ */
+function AdminReports() {
+  const { adminToken } = useAuth();
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const buildQuery = () => {
+    const params = new URLSearchParams();
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    return params.toString();
+  };
+
+  const fetchReport = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const qs = buildQuery();
+      const r = await api(`/admin/reports${qs ? "?" + qs : ""}`);
+      setData(r);
+    } catch (e) {
+      setError(e.message || "Failed to load report");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const downloadCsv = async () => {
+    setExporting(true);
+    try {
+      const qs = buildQuery();
+      const baseUrl =
+        import.meta.env.VITE_API_URL || "https://takeiteasybd.vercel.app/api";
+      const url = `${baseUrl}/admin/reports/export${qs ? "?" + qs : ""}`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      if (!res.ok) throw new Error("Export failed");
+
+      const blob = await res.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `take-it-easy-report-${Date.now()}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (e) {
+      msg(e.message || "Export failed", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const quickRange = (days) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    setStartDate(fmt(start));
+    setEndDate(fmt(end));
+
+    setTimeout(fetchReport, 100);
+  };
+
+  const s = data?.summary || {};
+
+  const statCards = [
+    {
+      label: "Total Revenue",
+      value: money(s.totalRevenue),
+      tone: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+      icon: TrendingUp,
+    },
+    {
+      label: "Total Profit",
+      value: money(s.totalProfit),
+      tone:
+        Number(s.totalProfit) >= 0
+          ? "bg-blue-50 text-blue-800 ring-blue-200"
+          : "bg-red-50 text-red-800 ring-red-200",
+      icon: Wallet,
+    },
+    {
+      label: "Total Cost",
+      value: money(s.totalCost),
+      tone: "bg-stone-50 text-stone-800 ring-stone-200",
+      icon: CreditCard,
+    },
+    {
+      label: "Total Loss",
+      value: money(s.totalLoss),
+      tone: "bg-red-50 text-red-800 ring-red-200",
+      icon: AlertCircle,
+    },
+    {
+      label: "Total Waste",
+      value: money(s.totalWaste),
+      tone: "bg-amber-50 text-amber-800 ring-amber-200",
+      icon: XCircle,
+    },
+    {
+      label: "Delivery Collected",
+      value: money(s.totalDeliveryCollected),
+      tone: "bg-violet-50 text-violet-800 ring-violet-200",
+      icon: Truck,
+    },
+  ];
+
+  const orderStats = [
+    {
+      label: "Total Orders",
+      value: s.totalOrders || 0,
+      color: "text-neutral-900",
+    },
+    {
+      label: "Delivered",
+      value: s.deliveredOrders || 0,
+      color: "text-emerald-600",
+    },
+    {
+      label: "Cancelled",
+      value: s.cancelledOrders || 0,
+      color: "text-red-600",
+    },
+    {
+      label: "Pending",
+      value: s.pendingOrders || 0,
+      color: "text-amber-600",
+    },
+    { label: "Paid", value: s.paidOrders || 0, color: "text-blue-600" },
+    {
+      label: "Items Sold",
+      value: s.totalItemsSold || 0,
+      color: "text-violet-600",
+    },
+  ];
+
+  return (
+    <section className="adminmain">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-orange-600">
+            ANALYTICS
+          </span>
+          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-900 sm:text-4xl">
+            Reports
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Profit, loss, waste এবং revenue breakdown — CSV export সহ।
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={downloadCsv}
+          disabled={exporting}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:opacity-60"
+        >
+          <Download size={15} className={exporting ? "animate-bounce" : ""} />
+          {exporting ? "Exporting..." : "Download CSV"}
+        </button>
+      </div>
+
+      <div className="mb-5 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-neutral-600">
+              Start date
+            </span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm outline-none focus:border-orange-500 focus:bg-white"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-neutral-600">
+              End date
+            </span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm outline-none focus:border-orange-500 focus:bg-white"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-neutral-600">
+              Order status
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium outline-none focus:border-orange-500 focus:bg-white"
+            >
+              <option value="all">All orders</option>
+              <option value="pending">Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="processing">Processing</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={fetchReport}
+              disabled={loading}
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              {loading ? "Loading..." : "Apply"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[
+            { label: "Today", days: 0 },
+            { label: "Last 7 days", days: 7 },
+            { label: "Last 30 days", days: 30 },
+            { label: "Last 90 days", days: 90 },
+            { label: "All time", days: null },
+          ].map((q) => (
+            <button
+              key={q.label}
+              type="button"
+              onClick={() => {
+                if (q.days === null) {
+                  setStartDate("");
+                  setEndDate("");
+                  setTimeout(fetchReport, 100);
+                } else {
+                  quickRange(q.days);
+                }
+              }}
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
+            >
+              {q.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {loading && !data ? (
+        <div className="rounded-2xl border border-neutral-200 bg-white">
+          <Loader text="Loading report" />
+        </div>
+      ) : (
+        <>
+          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {statCards.map((c) => {
+              const Icon = c.icon;
+              return (
+                <div
+                  key={c.label}
+                  className={`rounded-2xl border bg-white p-4 ring-1 ring-inset ${c.tone}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-80">
+                        {c.label}
+                      </p>
+                      <p className="mt-1.5 text-2xl font-black tabular-nums">
+                        {c.value}
+                      </p>
+                    </div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/60">
+                      <Icon size={18} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {orderStats.map((o) => (
+              <div
+                key={o.label}
+                className="rounded-2xl border border-neutral-200 bg-white p-3 text-center"
+              >
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                  {o.label}
+                </p>
+                <p
+                  className={`mt-1 text-xl font-black tabular-nums ${o.color}`}
+                >
+                  {o.value}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+            <div className="border-b border-neutral-100 px-4 py-3 sm:px-5">
+              <h3 className="text-sm font-extrabold text-neutral-900">
+                Per-product breakdown
+              </h3>
+              <p className="text-[11px] text-neutral-500">
+                কোন product কত বিক্রি হয়েছে, কত profit/loss দিয়েছে
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="bg-neutral-50 text-left text-[10px] font-extrabold uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-3">Product</th>
+                    <th className="px-4 py-3 text-right">Qty Sold</th>
+                    <th className="px-4 py-3 text-right">Revenue</th>
+                    <th className="px-4 py-3 text-right">Cost</th>
+                    <th className="px-4 py-3 text-right">Profit</th>
+                    <th className="px-4 py-3 text-right">Cancelled</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {(data?.perProduct || []).map((p) => (
+                    <tr key={p.productId} className="hover:bg-neutral-50">
+                      <td className="px-4 py-3 font-semibold text-neutral-900">
+                        {p.title}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {p.quantitySold}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {money(p.revenue)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-neutral-500">
+                        {money(p.cost)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-right font-black tabular-nums ${
+                          p.profit >= 0 ? "text-emerald-600" : "text-red-600"
+                        }`}
+                      >
+                        {money(p.profit)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-red-600">
+                        {p.cancelledQty || 0}
+                      </td>
+                    </tr>
+                  ))}
+                  {(!data?.perProduct || data.perProduct.length === 0) && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="px-4 py-10 text-center text-neutral-400"
+                      >
+                        কোনো data পাওয়া যায়নি
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </section>
   );
@@ -5826,6 +6294,7 @@ export default function App() {
             <Route path="products" element={<AdminProducts />} />
             <Route path="banners" element={<AdminBanners />} />
             <Route path="orders" element={<AdminOrders />} />
+            <Route path="reports" element={<AdminReports />} />
           </Route>
         </Route>
 
