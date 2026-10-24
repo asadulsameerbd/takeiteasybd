@@ -73,7 +73,39 @@ const msg = (title, icon = "success") =>
   });
 
 /* ============================================================ */
-/* ✅ Unified Query Keys — সব জায়গায় একই key ব্যবহার করতে হবে   */
+/* ✅ Helper: sizeStock normalize (Map বা object দুটোই handle)    */
+/* ============================================================ */
+function normalizeSizeStock(raw) {
+  if (!raw) return {};
+  if (raw instanceof Map) return Object.fromEntries(raw);
+  if (typeof raw === "object") return raw;
+  return {};
+}
+
+function getSizeStock(product, size) {
+  const stock = normalizeSizeStock(product.sizeStock);
+  if (stock[size] !== undefined) return Number(stock[size]);
+  return Number(product.stock || 0);
+}
+
+function isSizeAvailable(product, size) {
+  return getSizeStock(product, size) > 0;
+}
+
+function isProductOutOfStock(p) {
+  const stockObj = normalizeSizeStock(p.sizeStock);
+  if (Object.keys(stockObj).length > 0) {
+    const total = Object.values(stockObj).reduce(
+      (s, n) => s + Number(n || 0),
+      0,
+    );
+    return total <= 0;
+  }
+  return Number(p.stock || 0) <= 0;
+}
+
+/* ============================================================ */
+/* ✅ Unified Query Keys                                         */
 /* ============================================================ */
 const orderKeys = {
   all: ["orders"],
@@ -160,9 +192,12 @@ function useCart() {
   }, [cart]);
 
   const add = (p, size = "", notify = true) => {
-    if (Number(p.stock || 0) <= 0) {
+    // ✅ size-specific stock check
+    const available = size ? getSizeStock(p, size) : Number(p.stock || 0);
+
+    if (available <= 0) {
       if (notify) {
-        msg("এই পণ্যটি স্টক আউট।", "warning");
+        msg(size ? `${size} সাইজ স্টক আউট।` : "এই পণ্যটি স্টক আউট।", "warning");
       }
       return;
     }
@@ -189,7 +224,6 @@ function useCart() {
           ];
     });
 
-    // ✅ Meta Pixel: AddToCart (notify=true হলেই — Buy Now-এ duplicate এড়াতে)
     if (notify) {
       pixel.addToCart(p, 1, size);
     }
@@ -200,7 +234,7 @@ function useCart() {
         position: "top-end",
         icon: "success",
         title: "কার্টে যোগ হয়েছে!",
-        text: `${p.title} কার্টে যোগ করা হয়েছে।`,
+        text: `${p.title}${size ? ` (${size})` : ""} কার্টে যোগ করা হয়েছে।`,
         showConfirmButton: false,
         timer: 3200,
         timerProgressBar: true,
@@ -225,7 +259,6 @@ function useCart() {
     );
 
   const remove = (key) => {
-    // ✅ Meta Pixel: RemoveFromCart (remove করার আগে item খুঁজে নিন)
     const itemToRemove = cart.find((i) => i.key === key);
     if (itemToRemove) {
       pixel.removeFromCart(itemToRemove);
@@ -425,7 +458,8 @@ function getDiscountInfo(p) {
 /* Product Card                                                 */
 /* ============================================================ */
 function Card({ p, add }) {
-  const isOutOfStock = Number(p.stock || 0) <= 0;
+  // ✅ sizeStock-aware stock check
+  const isOutOfStock = isProductOutOfStock(p);
   const discount = getDiscountInfo(p);
   const hasSale = discount.percent > 0;
 
@@ -626,7 +660,8 @@ function Home() {
     };
   }, []);
 
-  const inStockProducts = products.filter((p) => Number(p.stock || 0) > 0);
+  // ✅ sizeStock-aware filter
+  const inStockProducts = products.filter((p) => !isProductOutOfStock(p));
 
   const b = banners[slide];
 
@@ -814,7 +849,6 @@ function Products() {
     };
   }, [q]);
 
-  // ✅ Meta Pixel: Search event (debounced 1s)
   useEffect(() => {
     if (!q.trim()) return;
     const t = setTimeout(() => {
@@ -823,7 +857,6 @@ function Products() {
     return () => clearTimeout(t);
   }, [q]);
 
-  // ✅ Meta Pixel: ViewCategory event (category change হলে একবার)
   const lastCategoryRef = useRef(null);
   useEffect(() => {
     if (selectedCategory === "All") return;
@@ -856,12 +889,11 @@ function Products() {
       return categoryMatch && priceMatch;
     })
     .sort((a, b) => {
-      // ✅ ১) Stock out সবসময় শেষে, stock in আগে
-      const aOut = Number(a.stock || 0) <= 0;
-      const bOut = Number(b.stock || 0) <= 0;
+      // ✅ sizeStock-aware sort
+      const aOut = isProductOutOfStock(a);
+      const bOut = isProductOutOfStock(b);
       if (aOut !== bOut) return aOut ? 1 : -1;
 
-      // ✅ ২) একই stock অবস্থার ভেতরে user-এর বেছে নেওয়া sort প্রয়োগ
       switch (sortBy) {
         case "price-low":
           return Number(a.price || 0) - Number(b.price || 0);
@@ -1279,7 +1311,7 @@ function FilterBox({
 }
 
 /* ============================================================ */
-/* Product Details                                              */
+/* Product Details — ✅ size-wise stock                          */
 /* ============================================================ */
 function Product() {
   const { slug } = useParams();
@@ -1293,7 +1325,6 @@ function Product() {
   const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Meta Pixel: ViewContent duplicate prevention
   const trackedProductIdRef = useRef(null);
 
   useEffect(() => {
@@ -1301,14 +1332,16 @@ function Product() {
     api("/products/" + slug, { auth: false })
       .then((d) => {
         setData(d);
-        setSize(d.product.sizes?.[0] || "");
+        // ✅ প্রথম available size auto-select
+        const sizes = d.product.sizes || [];
+        const firstAvailable = sizes.find((s) => isSizeAvailable(d.product, s));
+        setSize(firstAvailable || sizes[0] || "");
         setActiveImage(0);
       })
       .catch((e) => msg(e.message, "error"))
       .finally(() => setLoading(false));
   }, [slug]);
 
-  // ✅ Meta Pixel: ViewContent (একবার per product, pixel ready হতে 300ms delay)
   useEffect(() => {
     if (!data?.product) return;
     if (trackedProductIdRef.current === data.product._id) return;
@@ -1330,7 +1363,7 @@ function Product() {
   }
 
   const p = data.product;
-  const isOutOfStock = Number(p.stock || 0) <= 0;
+  const isOutOfStock = isProductOutOfStock(p);
   const discount = getDiscountInfo(p);
 
   const images = p.images?.length
@@ -1472,6 +1505,7 @@ function Product() {
             </p>
           )}
 
+          {/* ✅ SIZE-WISE STOCK */}
           {p.sizes?.length > 0 && (
             <div className="sizes mt-6">
               <b className="mb-3 block text-sm text-neutral-900 sm:text-base">
@@ -1479,25 +1513,39 @@ function Product() {
               </b>
 
               <div className="flex flex-wrap gap-2">
-                {p.sizes.map((s) => (
-                  <button
-                    type="button"
-                    className={`min-w-12 rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
-                      s === size
-                        ? "selected border-neutral-900 bg-neutral-900 text-white"
-                        : "border-neutral-300 bg-white text-neutral-800 hover:border-neutral-900"
-                    } ${isOutOfStock ? "cursor-not-allowed opacity-50" : ""}`}
-                    onClick={() => {
-                      if (isOutOfStock) return;
-                      setSize(s);
-                    }}
-                    disabled={isOutOfStock}
-                    key={s}
-                    aria-pressed={s === size}
-                  >
-                    {s}
-                  </button>
-                ))}
+                {p.sizes.map((s) => {
+                  const available = getSizeStock(p, s);
+                  const sizeOut = available <= 0;
+
+                  return (
+                    <button
+                      type="button"
+                      key={s}
+                      disabled={sizeOut || isOutOfStock}
+                      title={
+                        sizeOut
+                          ? `${s} — Stock out`
+                          : `${s} — ${available} in stock`
+                      }
+                      aria-pressed={s === size}
+                      onClick={() => {
+                        if (sizeOut || isOutOfStock) return;
+                        setSize(s);
+                      }}
+                      className={`min-w-12 rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+                        s === size && !sizeOut
+                          ? "selected border-neutral-900 bg-neutral-900 text-white"
+                          : "border-neutral-300 bg-white text-neutral-800 hover:border-neutral-900"
+                      } ${
+                        sizeOut || isOutOfStock
+                          ? "cursor-not-allowed opacity-40 line-through"
+                          : ""
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1532,6 +1580,10 @@ function Product() {
                       return msg("Please select a size.", "warning");
                     }
 
+                    if (p.sizes?.length && !isSizeAvailable(p, size)) {
+                      return msg(`${size} সাইজ স্টক আউট।`, "warning");
+                    }
+
                     add(p, size);
                   }}
                 >
@@ -1547,8 +1599,10 @@ function Product() {
                       return msg("Please select a size.", "warning");
                     }
 
-                    // ✅ Buy Now: notify=false, তাই AddToCart fire হবে না।
-                    // তবে pixel-এ AddToCart track করি এখানে (কারণ user চাইছে)
+                    if (p.sizes?.length && !isSizeAvailable(p, size)) {
+                      return msg(`${size} সাইজ স্টক আউট।`, "warning");
+                    }
+
                     pixel.addToCart(p, 1, size);
 
                     add(p, size, false);
@@ -1999,7 +2053,7 @@ function Cart() {
 }
 
 /* ============================================================ */
-/* Checkout                                                     */
+/* Checkout — unchanged                                          */
 /* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
@@ -2028,16 +2082,14 @@ function Checkout() {
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-  // ✅ Meta Pixel: InitiateCheckout (mount-এ একবার, cart থাকলে)
   const checkoutInitiatedRef = useRef(false);
   useEffect(() => {
     if (!cart.length || checkoutInitiatedRef.current) return;
     checkoutInitiatedRef.current = true;
     pixel.initiateCheckout(cart, total, itemCount);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount-এ একবার
+  }, []);
 
-  // ✅ Meta Pixel: AddPaymentInfo (method change হলে একবার)
   const lastMethodRef = useRef(method);
   useEffect(() => {
     if (lastMethodRef.current === method) return;
@@ -2142,7 +2194,6 @@ function Checkout() {
         throw new Error("Enter transaction ID.");
       }
 
-      // ✅ Purchase event-এর জন্য cart snapshot (কারণ success-এর পর clear হবে)
       const purchasePayload = {
         cart: cart.map((i) => ({
           productId: i.productId,
@@ -2172,7 +2223,6 @@ function Checkout() {
         }),
       });
 
-      // ✅ Meta Pixel: Purchase (সবচেয়ে গুরুত্বপূর্ণ!)
       pixel.purchase({
         cart: purchasePayload.cart,
         total: Number(r.total),
@@ -2182,7 +2232,6 @@ function Checkout() {
 
       setCart([]);
 
-      // ✅ সব order query force refetch — user প্রোফাইল + admin panel
       const userId = customer?.user?.id || customer?.user?._id;
 
       await Promise.all([
@@ -2204,7 +2253,6 @@ function Checkout() {
         }),
       ]);
 
-      // ✅ cross-tab broadcast — user-এর profile tab, admin-এর tab সবাই instant refetch করবে
       broadcastOrderChange("created", {
         orderNumber: r.orderNumber,
         userId: userId ? String(userId) : null,
@@ -3090,7 +3138,6 @@ function Contact() {
   ];
 
   const openWhatsApp = (message) => {
-    // ✅ Meta Pixel: Lead event
     pixel.lead("whatsapp_contact");
 
     window.open(
@@ -3328,7 +3375,6 @@ function Register() {
     try {
       await registerCustomer(f);
 
-      // ✅ Meta Pixel: CompleteRegistration
       pixel.completeRegistration();
 
       queryClient.removeQueries({ queryKey: ["orders"] });
@@ -3381,7 +3427,7 @@ function Register() {
 }
 
 /* ============================================================ */
-/* ✅ Customer Profile — TanStack Query + BroadcastChannel sync  */
+/* Customer Profile                                              */
 /* ============================================================ */
 function Profile() {
   const { customer, updateProfile, logoutCustomer } = useAuth();
@@ -3419,14 +3465,10 @@ function Profile() {
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
-    // ✅ ৩০ সেকেন্ডে auto refresh — আলাদা device থেকেও admin update দেখতে পাবে
     refetchInterval: 30000,
     refetchIntervalInBackground: true,
   });
 
-  // ✅ Cross-tab BroadcastChannel listener
-  // Admin অন্য tab-এ order status change করলে বা user অন্য tab-এ order দিলে
-  // এই tab instant refetch করবে
   useEffect(() => {
     if (!orderChannel || !customer?.token) return;
 
@@ -3846,7 +3888,7 @@ function AdminLogin() {
 }
 
 /* ============================================================ */
-/* Admin Navigation — TanStack Query                            */
+/* Admin Navigation                                             */
 /* ============================================================ */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
@@ -4003,7 +4045,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products                                               */
+/* Admin Products — ✅ size-wise stock                           */
 /* ============================================================ */
 function AdminProducts() {
   const queryClient = useQueryClient();
@@ -4020,6 +4062,7 @@ function AdminProducts() {
     category: "Oversized T-shirt",
     description: "",
     sizes: "M, L, XL, XXL",
+    sizeStock: {},
     colors: "",
     stock: "0",
     sku: "",
@@ -4054,6 +4097,14 @@ function AdminProducts() {
   function startEdit(p) {
     setEditingId(p._id);
     setFiles([]);
+
+    const sizeArr = p.sizes || [];
+    const prevStock = normalizeSizeStock(p.sizeStock);
+    const sizeStockObj = {};
+    sizeArr.forEach((s) => {
+      sizeStockObj[s] = Number(prevStock[s] ?? 0);
+    });
+
     setF({
       title: p.title || "",
       price: String(p.price ?? ""),
@@ -4061,7 +4112,8 @@ function AdminProducts() {
       discountPercent: String(p.discountPercent ?? ""),
       category: p.category || "",
       description: p.description || "",
-      sizes: (p.sizes || []).join(", "),
+      sizes: sizeArr.join(", "),
+      sizeStock: sizeStockObj,
       colors: (p.colors || []).join(", "),
       stock: String(p.stock ?? 0),
       sku: p.sku || "",
@@ -4099,6 +4151,15 @@ function AdminProducts() {
     return { percent: 0, original: 0, source: "none" };
   }, [f.price, f.compareAtPrice, f.discountPercent]);
 
+  const sizeList = f.sizes
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const computedTotalStock = sizeList.length
+    ? sizeList.reduce((sum, s) => sum + Number(f.sizeStock[s] || 0), 0)
+    : Number(f.stock || 0);
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -4122,6 +4183,12 @@ function AdminProducts() {
         images = [...uploaded, ...images];
       }
 
+      // ✅ clean sizeStock — শুধু valid size-এর stock
+      const cleanSizeStock = {};
+      sizeList.forEach((s) => {
+        cleanSizeStock[s] = Math.max(0, Number(f.sizeStock[s] || 0));
+      });
+
       const payload = {
         title: f.title,
         price: Number(f.price),
@@ -4129,15 +4196,13 @@ function AdminProducts() {
         discountPercent: Number(f.discountPercent || 0),
         category: f.category,
         description: f.description,
-        stock: Number(f.stock || 0),
+        stock: computedTotalStock,
         sku: f.sku,
         material: f.material,
         gsm: f.gsm,
         images,
-        sizes: f.sizes
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
+        sizes: sizeList,
+        sizeStock: cleanSizeStock,
         colors: f.colors
           .split(",")
           .map((x) => x.trim())
@@ -4210,7 +4275,6 @@ function AdminProducts() {
             ["compareAtPrice", "Compare-at price (original)"],
             ["discountPercent", "Discount % (auto or custom)"],
             ["category", "Category"],
-            ["stock", "Stock"],
             ["sku", "SKU"],
             ["sizes", "Sizes (comma separated)"],
             ["colors", "Colors (comma separated)"],
@@ -4220,16 +4284,10 @@ function AdminProducts() {
           ].map(([k, l]) => (
             <label key={k}>
               {l}
-
               <input
                 value={f[k]}
                 type={
-                  [
-                    "price",
-                    "compareAtPrice",
-                    "stock",
-                    "discountPercent",
-                  ].includes(k)
+                  ["price", "compareAtPrice", "discountPercent"].includes(k)
                     ? "number"
                     : "text"
                 }
@@ -4243,6 +4301,55 @@ function AdminProducts() {
               />
             </label>
           ))}
+
+          {/* ✅ Per-size stock inputs */}
+          {sizeList.length > 0 && (
+            <label className="span">
+              Stock per size{" "}
+              <span className="text-xs font-normal text-neutral-500">
+                (Total: {computedTotalStock})
+              </span>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                {sizeList.map((size) => (
+                  <div
+                    key={size}
+                    className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1.5"
+                  >
+                    <span className="min-w-10 text-xs font-extrabold text-neutral-700">
+                      {size}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={f.sizeStock[size] ?? 0}
+                      onChange={(e) =>
+                        setF({
+                          ...f,
+                          sizeStock: {
+                            ...f.sizeStock,
+                            [size]: Math.max(0, Number(e.target.value) || 0),
+                          },
+                        })
+                      }
+                      className="min-h-9 w-full rounded-md border border-neutral-200 bg-white px-2 text-sm outline-none focus:border-orange-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </label>
+          )}
+
+          {/* Legacy stock (size না থাকলে) */}
+          {sizeList.length === 0 && (
+            <label>
+              Stock
+              <input
+                type="number"
+                value={f.stock}
+                onChange={(e) => setF({ ...f, stock: e.target.value })}
+              />
+            </label>
+          )}
 
           <label className="span">
             Description
@@ -4338,6 +4445,8 @@ function AdminProducts() {
 
           {items.map((p) => {
             const discount = getDiscountInfo(p);
+            const stockObj = normalizeSizeStock(p.sizeStock);
+            const hasSizeStock = Object.keys(stockObj).length > 0;
 
             return (
               <div className="adminrow" key={p._id}>
@@ -4350,7 +4459,7 @@ function AdminProducts() {
                   <b>{p.title}</b>
                   <small>
                     {money(p.price)} · {p.category} ·{" "}
-                    {Number(p.stock || 0) <= 0 ? (
+                    {isProductOutOfStock(p) ? (
                       <span className="font-bold text-red-600">STOCK OUT</span>
                     ) : (
                       <>Stock {p.stock}</>
@@ -4372,6 +4481,24 @@ function AdminProducts() {
                       </>
                     )}
                   </small>
+
+                  {/* ✅ per-size stock preview */}
+                  {hasSizeStock && (
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                      {Object.entries(stockObj).map(([s, q]) => (
+                        <span
+                          key={s}
+                          className={`rounded-full px-2 py-0.5 font-bold ${
+                            Number(q) <= 0
+                              ? "bg-red-50 text-red-600 ring-1 ring-red-200"
+                              : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                          }`}
+                        >
+                          {s}: {Number(q)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -4681,7 +4808,7 @@ function AdminBanners() {
 }
 
 /* ============================================================ */
-/* New Orders — TanStack Query (live) + সব জায়গায় invalidate    */
+/* New Orders — ✅ size দেখাও                                   */
 /* ============================================================ */
 function NewOrders() {
   const queryClient = useQueryClient();
@@ -4711,7 +4838,6 @@ function NewOrders() {
 
       msg(`Order marked as ${nextStatus}`);
 
-      // ✅ সব order-related ক্যাশে force refetch — user প্রোফাইলও আপডেট হবে
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: orderKeys.newOrders,
@@ -4727,7 +4853,6 @@ function NewOrders() {
         }),
       ]);
 
-      // ✅ Cross-tab broadcast — user-এর profile tab instant refetch করবে
       broadcastOrderChange("status-changed", {
         orderId: id,
         status: nextStatus,
@@ -4878,11 +5003,22 @@ function NewOrders() {
                     <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
                       Items ({o.items?.length || 0})
                     </p>
-                    <p className="text-sm text-neutral-600">
-                      {(o.items || [])
-                        .map((i) => `${i.title} ×${i.quantity}`)
-                        .join(", ")}
-                    </p>
+                    {/* ✅ size সহ দেখাও */}
+                    <ul className="space-y-1 text-sm text-neutral-700">
+                      {(o.items || []).map((i, idx) => (
+                        <li key={idx} className="flex flex-wrap gap-1">
+                          <span className="font-semibold">{i.title}</span>
+                          {i.size && (
+                            <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+                              {i.size}
+                            </span>
+                          )}
+                          <span className="text-neutral-500">
+                            ×{i.quantity}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
 
@@ -4926,7 +5062,7 @@ function NewOrders() {
 }
 
 /* ============================================================ */
-/* Admin Orders — TanStack Query (live)                          */
+/* Admin Orders — ✅ size confirmed                              */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -5028,7 +5164,6 @@ function AdminOrders() {
       });
       msg("Order updated");
 
-      // ✅ admin + new-orders + user-side সব order query force refetch
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: orderKeys.adminList,
@@ -5044,7 +5179,6 @@ function AdminOrders() {
         }),
       ]);
 
-      // ✅ Cross-tab broadcast — user-এর profile tab instant refetch করবে
       broadcastOrderChange("status-changed", { orderId: id, patch });
     } catch (e) {
       msg(e.message, "error");
@@ -5466,8 +5600,15 @@ function AdminOrders() {
                                 </p>
                                 <p className="text-xs text-neutral-500">
                                   Qty {it.quantity}
-                                  {it.size ? ` · ${it.size}` : ""} ·{" "}
-                                  {money(it.price)} each
+                                  {it.size ? (
+                                    <>
+                                      {" · "}
+                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+                                        Size: {it.size}
+                                      </span>
+                                    </>
+                                  ) : null}{" "}
+                                  · {money(it.price)} each
                                 </p>
                               </div>
                               <p className="shrink-0 font-bold text-neutral-900 tabular-nums">
