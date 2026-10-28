@@ -221,6 +221,7 @@ function useCart() {
               price: p.price,
               quantity: 1,
               size,
+              deliveryCharge: Number(p.deliveryCharge || 0),
             },
           ];
     });
@@ -1486,6 +1487,12 @@ function Product() {
             )}
           </div>
 
+          {Number(p.deliveryCharge) > 0 && (
+            <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
+              <Truck size={12} /> ডেলিভারি ৳{Number(p.deliveryCharge)}
+            </p>
+          )}
+
           <p className="description mt-4 whitespace-pre-line break-words text-sm leading-7 text-neutral-600 sm:text-base">
             {p.description}
           </p>
@@ -2049,7 +2056,7 @@ function Cart() {
 }
 
 /* ============================================================ */
-/* Checkout                                                     */
+/* Checkout — with auto delivery charge                         */
 /* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
@@ -2060,6 +2067,9 @@ function Checkout() {
   const [proof, setProof] = useState("txn");
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // ✅ Global delivery charge (from admin settings)
+  const [globalDelivery, setGlobalDelivery] = useState(80);
   const [delivery, setDelivery] = useState(80);
 
   const [uploading, setUploading] = useState(false);
@@ -2077,6 +2087,29 @@ function Checkout() {
 
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
+
+  // ✅ Auto delivery calculation
+  const productDeliveries = cart
+    .map((item) => Number(item.deliveryCharge || 0))
+    .filter((n) => n > 0);
+
+  const autoDelivery = productDeliveries.length
+    ? Math.max(...productDeliveries)
+    : globalDelivery;
+
+  useEffect(() => {
+    api("/settings/delivery", { auth: false })
+      .then((r) => {
+        const val = Number(r.deliveryCharge || 80);
+        setGlobalDelivery(val);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setDelivery(autoDelivery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDelivery]);
 
   const checkoutInitiatedRef = useRef(false);
   useEffect(() => {
@@ -2275,6 +2308,11 @@ function Checkout() {
     "min-h-12 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-3 text-sm outline-none transition placeholder:text-neutral-400 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100";
 
   const labelCls = "mb-1.5 block text-xs font-bold text-neutral-700";
+
+  // ✅ Delivery charge select options
+  const deliveryOptions = Array.from(new Set([autoDelivery, 80, 130, 0])).sort(
+    (a, b) => a - b,
+  );
 
   if (!cart.length) {
     return (
@@ -2629,14 +2667,21 @@ function Checkout() {
                       />
                     </label>
                     <label className="block min-w-0">
-                      <span className={labelCls}>ডেলিভারি এরিয়া</span>
+                      <span className={labelCls}>ডেলিভারি চার্জ</span>
                       <select
                         value={delivery}
                         onChange={(e) => setDelivery(Number(e.target.value))}
                         className={inputCls}
                       >
-                        <option value="80">ঢাকার ভিতরে — ৳80</option>
-                        <option value="130">ঢাকার বাইরে — ৳130</option>
+                        {deliveryOptions.map((v) => (
+                          <option key={v} value={v}>
+                            {v === autoDelivery
+                              ? `ডিফল্ট — ৳${v}`
+                              : v === 0
+                                ? "ফ্রি ডেলিভারি — ৳0"
+                                : `৳${v}`}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label className="block min-w-0 col-span-2">
@@ -2729,14 +2774,21 @@ function Checkout() {
                       />
                     </label>
                     <label className="block min-w-0">
-                      <span className={labelCls}>ডেলিভারি এরিয়া</span>
+                      <span className={labelCls}>ডেলিভারি চার্জ</span>
                       <select
                         value={delivery}
                         onChange={(e) => setDelivery(Number(e.target.value))}
                         className={inputCls}
                       >
-                        <option value="80">ঢাকার ভিতরে — ৳80</option>
-                        <option value="130">ঢাকার বাইরে — ৳130</option>
+                        {deliveryOptions.map((v) => (
+                          <option key={v} value={v}>
+                            {v === autoDelivery
+                              ? `ডিফল্ট — ৳${v}`
+                              : v === 0
+                                ? "ফ্রি ডেলিভারি — ৳0"
+                                : `৳${v}`}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label className="block min-w-0">
@@ -3884,7 +3936,7 @@ function AdminLogin() {
 }
 
 /* ============================================================ */
-/* Admin Navigation                                             */
+/* Admin Navigation — with Delivery Settings link               */
 /* ============================================================ */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
@@ -3931,6 +3983,10 @@ function AdminNav() {
       <Link to="/admin/products">Products</Link>
       <Link to="/admin/banners">Banners</Link>
       <Link to="/admin/orders">Orders</Link>
+
+      <Link to="/admin/delivery" className="flex items-center gap-2">
+        <Truck size={14} /> Delivery Settings
+      </Link>
 
       <Link to="/admin/reports" className="flex items-center gap-2">
         <TrendingUp size={14} /> Reports
@@ -4045,7 +4101,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products                                               */
+/* Admin Products — with delivery charge                        */
 /* ============================================================ */
 function AdminProducts() {
   const queryClient = useQueryClient();
@@ -4060,6 +4116,7 @@ function AdminProducts() {
     cost: "",
     compareAtPrice: "",
     discountPercent: "",
+    deliveryCharge: "",
     category: "Oversized T-shirt",
     description: "",
     sizes: "M, L, XL, XXL",
@@ -4112,6 +4169,7 @@ function AdminProducts() {
       cost: String(p.cost ?? 0),
       compareAtPrice: String(p.compareAtPrice ?? ""),
       discountPercent: String(p.discountPercent ?? ""),
+      deliveryCharge: String(p.deliveryCharge ?? 0),
       category: p.category || "",
       description: p.description || "",
       sizes: sizeArr.join(", "),
@@ -4196,6 +4254,7 @@ function AdminProducts() {
         cost: Number(f.cost || 0),
         compareAtPrice: Number(f.compareAtPrice || 0),
         discountPercent: Number(f.discountPercent || 0),
+        deliveryCharge: Math.max(0, Number(f.deliveryCharge || 0)),
         category: f.category,
         description: f.description,
         stock: computedTotalStock,
@@ -4311,6 +4370,21 @@ function AdminProducts() {
               />
             </label>
           ))}
+
+          {/* ✅ Per-product delivery charge */}
+          <label>
+            Delivery charge (৳){" "}
+            <span className="font-normal text-neutral-400">
+              (0 = global default)
+            </span>
+            <input
+              type="number"
+              min="0"
+              value={f.deliveryCharge}
+              onChange={(e) => setF({ ...f, deliveryCharge: e.target.value })}
+              placeholder="0 means use global default"
+            />
+          </label>
 
           {sizeList.length > 0 && (
             <label className="span">
@@ -4471,6 +4545,15 @@ function AdminProducts() {
                       <span className="font-bold text-red-600">STOCK OUT</span>
                     ) : (
                       <>Stock {p.stock}</>
+                    )}
+                    {Number(p.deliveryCharge) > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-bold text-emerald-600">
+                          Delivery ৳{Number(p.deliveryCharge)}
+                        </span>
+                      </>
                     )}
                     {discount.percent > 0 && (
                       <>
@@ -5068,7 +5151,7 @@ function NewOrders() {
 }
 
 /* ============================================================ */
-/* Admin Orders — + Delivery Charge override                    */
+/* Admin Orders — + Delivery Charge override + Delete           */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -5212,6 +5295,50 @@ function AdminOrders() {
       ]);
 
       broadcastOrderChange("status-changed", { orderId: id });
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+
+  // ✅ Delete order
+  async function deleteOrder(id, orderNumber) {
+    const result = await Swal.fire({
+      title: "Delete this order?",
+      html: `Order <b>${orderNumber}</b> permanently delete হবে।<br/><span style="color:#dc2626;font-size:13px;">এই কাজটি undo করা যাবে না।</span>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Yes, delete it",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      await api(`/admin/orders/${id}`, { method: "DELETE" });
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.newOrders,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
+
+      broadcastOrderChange("deleted", { orderId: id });
+
+      if (expandedId === id) setExpandedId(null);
+
+      msg("Order deleted successfully");
     } catch (e) {
       msg(e.message, "error");
     }
@@ -5822,6 +5949,23 @@ function AdminOrders() {
                           </label>
                         </div>
                       </div>
+
+                      {/* ✅ Delete order — Danger zone */}
+                      <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-3">
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-red-700">
+                          Danger zone
+                        </h4>
+                        <p className="mb-2 text-xs text-neutral-700">
+                          Order permanently delete করলে আর recover করা যাবে না।
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => deleteOrder(o._id, o.orderNumber)}
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700"
+                        >
+                          <Trash2 size={14} /> Delete this order
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -5835,7 +5979,109 @@ function AdminOrders() {
 }
 
 /* ============================================================ */
-/* Admin Reports — Profit / Loss / Waste / CSV                  */
+/* Admin Delivery Settings                                      */
+/* ============================================================ */
+function AdminDeliverySettings() {
+  const queryClient = useQueryClient();
+  const [charge, setCharge] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-settings"],
+    queryFn: () => apiFetch("/admin/settings"),
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (data?.globalDeliveryCharge !== undefined) {
+      setCharge(String(data.globalDeliveryCharge));
+    }
+  }, [data?.globalDeliveryCharge]);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api("/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          globalDeliveryCharge: Math.max(0, Number(charge || 0)),
+        }),
+      });
+      msg("Global delivery charge updated");
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["settings-delivery"] }),
+      ]);
+    } catch (e) {
+      msg(e.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="adminmain">
+      <Heading
+        tag="SHIPPING"
+        title="Delivery settings."
+        desc="সব product-এর জন্য একই delivery charge সেট করুন।"
+      />
+
+      {isLoading ? (
+        <Loader text="Loading settings" />
+      ) : (
+        <form className="box stack" onSubmit={save}>
+          <h2>Global delivery charge</h2>
+          <p className="text-sm text-neutral-500">
+            এই চার্জ সেইসব product-এ প্রয়োগ হবে যেগুলোতে আলাদা delivery charge
+            সেট করা নেই।
+          </p>
+
+          <label>
+            Delivery charge (৳)
+            <input
+              type="number"
+              min="0"
+              value={charge}
+              onChange={(e) => setCharge(e.target.value)}
+              required
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            {[0, 60, 80, 100, 130].map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setCharge(String(v))}
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
+              >
+                ৳{v}
+              </button>
+            ))}
+          </div>
+
+          <button className="btn orange" disabled={busy}>
+            {busy ? (
+              <>
+                <InlineLoader dark /> Saving...
+              </>
+            ) : (
+              <>
+                Save global delivery <Check size={16} />
+              </>
+            )}
+          </button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+/* ============================================================ */
+/* Admin Reports                                                */
 /* ============================================================ */
 function AdminReports() {
   const { adminToken } = useAuth();
@@ -6294,6 +6540,7 @@ export default function App() {
             <Route path="products" element={<AdminProducts />} />
             <Route path="banners" element={<AdminBanners />} />
             <Route path="orders" element={<AdminOrders />} />
+            <Route path="delivery" element={<AdminDeliverySettings />} />
             <Route path="reports" element={<AdminReports />} />
           </Route>
         </Route>
