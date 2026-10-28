@@ -75,31 +75,15 @@ const msg = (title, icon = "success") =>
   });
 
 /* ============================================================ */
-/* ✅ Zone helpers                                              */
+/* ✅ Zone helpers — ২টা zone: Inside Dhaka / Outside Dhaka     */
 /* ============================================================ */
 const ZONE_LABELS = {
   dhaka: "Inside Dhaka",
-  ashulia: "Near Ashulia",
   outside: "Outside Dhaka",
 };
 
 function detectDeliveryZone(city, address = "") {
   const text = `${city || ""} ${address || ""}`.toLowerCase();
-
-  const ashuliaKeywords = [
-    "ashulia",
-    "আশুলিয়া",
-    "savar",
-    "সাভার",
-    "nobinagar",
-    "নবীনগর",
-    "baipayl",
-    "বাইপাইল",
-    "jamgora",
-    "জামগড়া",
-    "hemayetpur",
-    "হেমায়েতপুর",
-  ];
 
   const dhakaKeywords = [
     "dhaka",
@@ -132,20 +116,22 @@ function detectDeliveryZone(city, address = "") {
     "বাড্ডা",
     "khilgaon",
     "খিলগাঁও",
+    "ashulia",
+    "আশুলিয়া",
+    "savar",
+    "সাভার",
   ];
 
-  if (ashuliaKeywords.some((k) => text.includes(k))) return "ashulia";
   if (dhakaKeywords.some((k) => text.includes(k))) return "dhaka";
   return "outside";
 }
 
 function normalizeDeliveryCharges(raw) {
   if (!raw || typeof raw !== "object") {
-    return { dhaka: 0, ashulia: 0, outside: 0 };
+    return { dhaka: 0, outside: 0 };
   }
   return {
     dhaka: Math.max(0, Number(raw.dhaka ?? 0)),
-    ashulia: Math.max(0, Number(raw.ashulia ?? 0)),
     outside: Math.max(0, Number(raw.outside ?? 0)),
   };
 }
@@ -1450,9 +1436,7 @@ function Product() {
 
   const deliveryCharges = normalizeDeliveryCharges(p.deliveryCharges);
   const hasCustomDelivery =
-    deliveryCharges.dhaka > 0 ||
-    deliveryCharges.ashulia > 0 ||
-    deliveryCharges.outside > 0;
+    deliveryCharges.dhaka > 0 || deliveryCharges.outside > 0;
 
   async function review(e) {
     e.preventDefault();
@@ -1576,11 +1560,6 @@ function Product() {
               {deliveryCharges.dhaka > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
                   <Truck size={12} /> ঢাকায় ৳{deliveryCharges.dhaka}
-                </span>
-              )}
-              {deliveryCharges.ashulia > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 ring-1 ring-blue-200">
-                  <Truck size={12} /> আশুলিয়া ৳{deliveryCharges.ashulia}
                 </span>
               )}
               {deliveryCharges.outside > 0 && (
@@ -2154,7 +2133,7 @@ function Cart() {
 }
 
 /* ============================================================ */
-/* Checkout — zone-aware delivery charge                        */
+/* Checkout — ২টা zone: Inside Dhaka / Outside Dhaka            */
 /* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
@@ -2166,12 +2145,14 @@ function Checkout() {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // ✅ Global delivery charges per zone (from admin settings)
+  // ✅ Global delivery charges (২টা zone)
   const [globalDelivery, setGlobalDelivery] = useState({
     dhaka: 60,
-    ashulia: 80,
     outside: 130,
   });
+
+  // ✅ Customer-selected zone — default from city auto-detect
+  const [selectedZone, setSelectedZone] = useState("dhaka");
   const [delivery, setDelivery] = useState(0);
 
   const [uploading, setUploading] = useState(false);
@@ -2190,21 +2171,27 @@ function Checkout() {
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-  // ✅ Detect zone from city/address
-  const currentZone = detectDeliveryZone(f.city, f.address);
+  // ✅ Auto-detect zone from city/address (auto-update selectedZone)
+  const detectedZone = detectDeliveryZone(f.city, f.address);
 
-  // ✅ Auto delivery calculation
+  // ✅ When user types city/address, auto-suggest zone
+  useEffect(() => {
+    setSelectedZone(detectedZone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedZone]);
+
+  // ✅ Auto delivery calculation based on selectedZone
   const productZoneCharges = cart
     .map((item) => {
       const dc = normalizeDeliveryCharges(item.deliveryCharges);
-      const val = Number(dc[currentZone] || 0);
+      const val = Number(dc[selectedZone] || 0);
       return val > 0 ? val : 0;
     })
     .filter((n) => n > 0);
 
   const autoDelivery = productZoneCharges.length
     ? Math.max(...productZoneCharges)
-    : Number(globalDelivery[currentZone] || 0);
+    : Number(globalDelivery[selectedZone] || 0);
 
   useEffect(() => {
     api("/settings/delivery", { auth: false })
@@ -2212,7 +2199,6 @@ function Checkout() {
         const d = r.deliveryCharges || {};
         setGlobalDelivery({
           dhaka: Math.max(0, Number(d.dhaka ?? 60)),
-          ashulia: Math.max(0, Number(d.ashulia ?? 80)),
           outside: Math.max(0, Number(d.outside ?? 130)),
         });
       })
@@ -2358,6 +2344,7 @@ function Checkout() {
           })),
           paymentMethod: method,
           deliveryCharge: delivery,
+          deliveryZone: selectedZone,
           transactionId:
             method !== "cod" && proof === "txn" ? f.transactionId : "",
           paymentScreenshot,
@@ -2422,17 +2409,6 @@ function Checkout() {
 
   const labelCls = "mb-1.5 block text-xs font-bold text-neutral-700";
 
-  // ✅ Delivery charge select options (per current zone)
-  const deliveryOptions = Array.from(
-    new Set([
-      autoDelivery,
-      Number(globalDelivery.dhaka),
-      Number(globalDelivery.ashulia),
-      Number(globalDelivery.outside),
-      0,
-    ]),
-  ).sort((a, b) => a - b);
-
   if (!cart.length) {
     return (
       <main className="min-h-screen bg-[#faf9f6] px-3 py-6 sm:px-5 sm:py-10 lg:px-8">
@@ -2459,6 +2435,40 @@ function Checkout() {
       </main>
     );
   }
+
+  /* ✅ Zone selector — 2 big buttons */
+  const zoneSelector = (
+    <div className="grid grid-cols-2 gap-2.5">
+      {[
+        { v: "dhaka", l: "Inside Dhaka", icon: "🏙️" },
+        { v: "outside", l: "Outside Dhaka", icon: "🚚" },
+      ].map((z) => {
+        const active = selectedZone === z.v;
+        return (
+          <button
+            key={z.v}
+            type="button"
+            onClick={() => setSelectedZone(z.v)}
+            className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-3 text-sm font-bold transition ${
+              active
+                ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
+            }`}
+          >
+            <span className="text-xl">{z.icon}</span>
+            <span>{z.l}</span>
+            <span
+              className={`text-[11px] font-semibold ${
+                active ? "text-orange-600" : "text-neutral-400"
+              }`}
+            >
+              ৳{Number(globalDelivery[z.v] || 0)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   const renderMethodsDesktop = () => (
     <div className="grid grid-cols-4 gap-2">
@@ -2785,24 +2795,6 @@ function Checkout() {
                         className={inputCls}
                       />
                     </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>ডেলিভারি চার্জ</span>
-                      <select
-                        value={delivery}
-                        onChange={(e) => setDelivery(Number(e.target.value))}
-                        className={inputCls}
-                      >
-                        {deliveryOptions.map((v) => (
-                          <option key={v} value={v}>
-                            {v === autoDelivery
-                              ? `${ZONE_LABELS[currentZone]} — ৳${v}`
-                              : v === 0
-                                ? "ফ্রি ডেলিভারি — ৳0"
-                                : `৳${v}`}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                     <label className="block min-w-0 col-span-2">
                       <span className={labelCls}>সম্পূর্ণ ঠিকানা</span>
                       <textarea
@@ -2815,6 +2807,19 @@ function Checkout() {
                         className={inputCls + " resize-y"}
                       />
                     </label>
+                  </div>
+
+                  {/* ✅ 2-zone selector */}
+                  <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
+                    <span className="mb-2 block text-xs font-bold text-neutral-700">
+                      ডেলিভারি এরিয়া নির্বাচন করুন
+                    </span>
+                    {zoneSelector}
+                    <p className="mt-2 text-[11px] text-neutral-500">
+                      সঠিক এরিয়া বেছে নিন — এতে ডেলিভারি চার্জ ঠিক থাকবে।
+                      বর্তমান ডেলিভারি:{" "}
+                      <b className="text-orange-700">{money(delivery)}</b>
+                    </p>
                   </div>
                 </section>
 
@@ -2893,24 +2898,6 @@ function Checkout() {
                       />
                     </label>
                     <label className="block min-w-0">
-                      <span className={labelCls}>ডেলিভারি চার্জ</span>
-                      <select
-                        value={delivery}
-                        onChange={(e) => setDelivery(Number(e.target.value))}
-                        className={inputCls}
-                      >
-                        {deliveryOptions.map((v) => (
-                          <option key={v} value={v}>
-                            {v === autoDelivery
-                              ? `${ZONE_LABELS[currentZone]} — ৳${v}`
-                              : v === 0
-                                ? "ফ্রি ডেলিভারি — ৳0"
-                                : `৳${v}`}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block min-w-0">
                       <span className={labelCls}>সম্পূর্ণ ঠিকানা</span>
                       <textarea
                         name="address"
@@ -2922,6 +2909,17 @@ function Checkout() {
                         className={inputCls + " resize-y"}
                       />
                     </label>
+                  </div>
+
+                  <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
+                    <span className="mb-2 block text-xs font-bold text-neutral-700">
+                      ডেলিভারি এরিয়া নির্বাচন করুন
+                    </span>
+                    {zoneSelector}
+                    <p className="mt-2 text-[11px] text-neutral-500">
+                      বর্তমান ডেলিভারি:{" "}
+                      <b className="text-orange-700">{money(delivery)}</b>
+                    </p>
                   </div>
                 </section>
 
@@ -2981,7 +2979,7 @@ function Checkout() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-neutral-500">
-                        ডেলিভারি ({ZONE_LABELS[currentZone]})
+                        ডেলিভারি ({ZONE_LABELS[selectedZone]})
                       </span>
                       <span className="font-semibold tabular-nums">
                         {money(delivery)}
@@ -4228,7 +4226,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products — with zone-wise delivery charges             */
+/* Admin Products — ২টা zone delivery charges                   */
 /* ============================================================ */
 function AdminProducts() {
   const queryClient = useQueryClient();
@@ -4244,7 +4242,6 @@ function AdminProducts() {
     compareAtPrice: "",
     discountPercent: "",
     deliveryDhaka: "",
-    deliveryAshulia: "",
     deliveryOutside: "",
     category: "Oversized T-shirt",
     description: "",
@@ -4301,7 +4298,6 @@ function AdminProducts() {
       compareAtPrice: String(p.compareAtPrice ?? ""),
       discountPercent: String(p.discountPercent ?? ""),
       deliveryDhaka: String(dc.dhaka ?? 0),
-      deliveryAshulia: String(dc.ashulia ?? 0),
       deliveryOutside: String(dc.outside ?? 0),
       category: p.category || "",
       description: p.description || "",
@@ -4389,7 +4385,6 @@ function AdminProducts() {
         discountPercent: Number(f.discountPercent || 0),
         deliveryCharges: {
           dhaka: Math.max(0, Number(f.deliveryDhaka || 0)),
-          ashulia: Math.max(0, Number(f.deliveryAshulia || 0)),
           outside: Math.max(0, Number(f.deliveryOutside || 0)),
         },
         category: f.category,
@@ -4508,17 +4503,16 @@ function AdminProducts() {
             </label>
           ))}
 
-          {/* ✅ Zone-wise delivery charges */}
+          {/* ✅ ২টা zone delivery charges */}
           <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
             <div className="mb-2 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
               <Truck size={12} /> Delivery charges (৳)
             </div>
             <p className="mb-3 text-xs text-neutral-600">
-              0 দিলে global default use হবে। প্রতিটা zone-এর জন্য আলাদা charge
-              সেট করুন।
+              0 দিলে global default use হবে।
             </p>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-xs font-bold text-neutral-700">
                   Inside Dhaka
@@ -4529,22 +4523,6 @@ function AdminProducts() {
                   value={f.deliveryDhaka}
                   onChange={(e) =>
                     setF({ ...f, deliveryDhaka: e.target.value })
-                  }
-                  placeholder="0 = global"
-                  className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-orange-500"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-xs font-bold text-neutral-700">
-                  Near Ashulia
-                </span>
-                <input
-                  type="number"
-                  min="0"
-                  value={f.deliveryAshulia}
-                  onChange={(e) =>
-                    setF({ ...f, deliveryAshulia: e.target.value })
                   }
                   placeholder="0 = global"
                   className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-orange-500"
@@ -4713,8 +4691,7 @@ function AdminProducts() {
             const stockObj = normalizeSizeStock(p.sizeStock);
             const hasSizeStock = Object.keys(stockObj).length > 0;
             const dc = normalizeDeliveryCharges(p.deliveryCharges);
-            const hasCustomDelivery =
-              dc.dhaka > 0 || dc.ashulia > 0 || dc.outside > 0;
+            const hasCustomDelivery = dc.dhaka > 0 || dc.outside > 0;
 
             return (
               <div className="adminrow" key={p._id}>
@@ -4755,11 +4732,6 @@ function AdminProducts() {
                       {dc.dhaka > 0 && (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 ring-1 ring-emerald-200">
                           Dhaka: ৳{dc.dhaka}
-                        </span>
-                      )}
-                      {dc.ashulia > 0 && (
-                        <span className="rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-700 ring-1 ring-blue-200">
-                          Ashulia: ৳{dc.ashulia}
                         </span>
                       )}
                       {dc.outside > 0 && (
@@ -6188,11 +6160,11 @@ function AdminOrders() {
 }
 
 /* ============================================================ */
-/* Admin Delivery Settings — zone-wise                          */
+/* Admin Delivery Settings — ২টা zone                          */
 /* ============================================================ */
 function AdminDeliverySettings() {
   const queryClient = useQueryClient();
-  const [f, setF] = useState({ dhaka: "", ashulia: "", outside: "" });
+  const [f, setF] = useState({ dhaka: "", outside: "" });
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -6205,7 +6177,6 @@ function AdminDeliverySettings() {
     if (data?.deliveryCharges) {
       setF({
         dhaka: String(data.deliveryCharges.dhaka ?? 60),
-        ashulia: String(data.deliveryCharges.ashulia ?? 80),
         outside: String(data.deliveryCharges.outside ?? 130),
       });
     }
@@ -6220,7 +6191,6 @@ function AdminDeliverySettings() {
         body: JSON.stringify({
           deliveryCharges: {
             dhaka: Math.max(0, Number(f.dhaka || 0)),
-            ashulia: Math.max(0, Number(f.ashulia || 0)),
             outside: Math.max(0, Number(f.outside || 0)),
           },
         }),
@@ -6243,7 +6213,7 @@ function AdminDeliverySettings() {
       <Heading
         tag="SHIPPING"
         title="Delivery settings."
-        desc="৩টা zone-এর জন্য global delivery charge সেট করুন। প্রতিটা product-এ আলাদা charge থাকলে সেটা priority পাবে।"
+        desc="২টা zone-এর জন্য global delivery charge সেট করুন। প্রতিটা product-এ আলাদা charge থাকলে সেটা priority পাবে।"
       />
 
       {isLoading ? (
@@ -6256,7 +6226,7 @@ function AdminDeliverySettings() {
             সেট করা নেই (0)।
           </p>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <label>
               Inside Dhaka (৳)
               <input
@@ -6264,17 +6234,6 @@ function AdminDeliverySettings() {
                 min="0"
                 value={f.dhaka}
                 onChange={(e) => setF({ ...f, dhaka: e.target.value })}
-                required
-              />
-            </label>
-
-            <label>
-              Near Ashulia (৳)
-              <input
-                type="number"
-                min="0"
-                value={f.ashulia}
-                onChange={(e) => setF({ ...f, ashulia: e.target.value })}
                 required
               />
             </label>
