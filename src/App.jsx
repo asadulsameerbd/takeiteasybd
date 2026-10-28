@@ -75,7 +75,83 @@ const msg = (title, icon = "success") =>
   });
 
 /* ============================================================ */
-/* ✅ Helper: sizeStock normalize (Map বা object দুটোই handle)    */
+/* ✅ Zone helpers                                              */
+/* ============================================================ */
+const ZONE_LABELS = {
+  dhaka: "Inside Dhaka",
+  ashulia: "Near Ashulia",
+  outside: "Outside Dhaka",
+};
+
+function detectDeliveryZone(city, address = "") {
+  const text = `${city || ""} ${address || ""}`.toLowerCase();
+
+  const ashuliaKeywords = [
+    "ashulia",
+    "আশুলিয়া",
+    "savar",
+    "সাভার",
+    "nobinagar",
+    "নবীনগর",
+    "baipayl",
+    "বাইপাইল",
+    "jamgora",
+    "জামগড়া",
+    "hemayetpur",
+    "হেমায়েতপুর",
+  ];
+
+  const dhakaKeywords = [
+    "dhaka",
+    "ঢাকা",
+    "dhanmondi",
+    "ধানমন্ডি",
+    "mirpur",
+    "মিরপুর",
+    "uttara",
+    "উত্তরা",
+    "gulshan",
+    "গুলশান",
+    "banani",
+    "বনানী",
+    "motijheel",
+    "মতিঝিল",
+    "gazipur",
+    "গাজীপুর",
+    "narayanganj",
+    "নারায়ণগঞ্জ",
+    "tongi",
+    "টঙ্গী",
+    "keraniganj",
+    "কেরানীগঞ্জ",
+    "tejgaon",
+    "তেজগাঁও",
+    "mohammadpur",
+    "মোহাম্মদপুর",
+    "badda",
+    "বাড্ডা",
+    "khilgaon",
+    "খিলগাঁও",
+  ];
+
+  if (ashuliaKeywords.some((k) => text.includes(k))) return "ashulia";
+  if (dhakaKeywords.some((k) => text.includes(k))) return "dhaka";
+  return "outside";
+}
+
+function normalizeDeliveryCharges(raw) {
+  if (!raw || typeof raw !== "object") {
+    return { dhaka: 0, ashulia: 0, outside: 0 };
+  }
+  return {
+    dhaka: Math.max(0, Number(raw.dhaka ?? 0)),
+    ashulia: Math.max(0, Number(raw.ashulia ?? 0)),
+    outside: Math.max(0, Number(raw.outside ?? 0)),
+  };
+}
+
+/* ============================================================ */
+/* Helper: sizeStock normalize                                  */
 /* ============================================================ */
 function normalizeSizeStock(raw) {
   if (!raw) return {};
@@ -107,7 +183,7 @@ function isProductOutOfStock(p) {
 }
 
 /* ============================================================ */
-/* ✅ Unified Query Keys                                         */
+/* Unified Query Keys                                           */
 /* ============================================================ */
 const orderKeys = {
   all: ["orders"],
@@ -203,6 +279,8 @@ function useCart() {
       return;
     }
 
+    const productZones = normalizeDeliveryCharges(p.deliveryCharges);
+
     setCart((old) => {
       const key = p._id + ":" + size;
       const found = old.find((i) => i.key === key);
@@ -221,7 +299,7 @@ function useCart() {
               price: p.price,
               quantity: 1,
               size,
-              deliveryCharge: Number(p.deliveryCharge || 0),
+              deliveryCharges: productZones,
             },
           ];
     });
@@ -1370,6 +1448,12 @@ function Product() {
 
   const selectedImage = Math.min(activeImage, images.length - 1);
 
+  const deliveryCharges = normalizeDeliveryCharges(p.deliveryCharges);
+  const hasCustomDelivery =
+    deliveryCharges.dhaka > 0 ||
+    deliveryCharges.ashulia > 0 ||
+    deliveryCharges.outside > 0;
+
   async function review(e) {
     e.preventDefault();
 
@@ -1487,10 +1571,24 @@ function Product() {
             )}
           </div>
 
-          {Number(p.deliveryCharge) > 0 && (
-            <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
-              <Truck size={12} /> ডেলিভারি ৳{Number(p.deliveryCharge)}
-            </p>
+          {hasCustomDelivery && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {deliveryCharges.dhaka > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
+                  <Truck size={12} /> ঢাকায় ৳{deliveryCharges.dhaka}
+                </span>
+              )}
+              {deliveryCharges.ashulia > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 ring-1 ring-blue-200">
+                  <Truck size={12} /> আশুলিয়া ৳{deliveryCharges.ashulia}
+                </span>
+              )}
+              {deliveryCharges.outside > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">
+                  <Truck size={12} /> ঢাকার বাইরে ৳{deliveryCharges.outside}
+                </span>
+              )}
+            </div>
           )}
 
           <p className="description mt-4 whitespace-pre-line break-words text-sm leading-7 text-neutral-600 sm:text-base">
@@ -2056,7 +2154,7 @@ function Cart() {
 }
 
 /* ============================================================ */
-/* Checkout — with auto delivery charge                         */
+/* Checkout — zone-aware delivery charge                        */
 /* ============================================================ */
 function Checkout() {
   const { cart, total, setCart } = useContext(C);
@@ -2068,9 +2166,13 @@ function Checkout() {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // ✅ Global delivery charge (from admin settings)
-  const [globalDelivery, setGlobalDelivery] = useState(80);
-  const [delivery, setDelivery] = useState(80);
+  // ✅ Global delivery charges per zone (from admin settings)
+  const [globalDelivery, setGlobalDelivery] = useState({
+    dhaka: 60,
+    ashulia: 80,
+    outside: 130,
+  });
+  const [delivery, setDelivery] = useState(0);
 
   const [uploading, setUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState("");
@@ -2088,20 +2190,31 @@ function Checkout() {
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
+  // ✅ Detect zone from city/address
+  const currentZone = detectDeliveryZone(f.city, f.address);
+
   // ✅ Auto delivery calculation
-  const productDeliveries = cart
-    .map((item) => Number(item.deliveryCharge || 0))
+  const productZoneCharges = cart
+    .map((item) => {
+      const dc = normalizeDeliveryCharges(item.deliveryCharges);
+      const val = Number(dc[currentZone] || 0);
+      return val > 0 ? val : 0;
+    })
     .filter((n) => n > 0);
 
-  const autoDelivery = productDeliveries.length
-    ? Math.max(...productDeliveries)
-    : globalDelivery;
+  const autoDelivery = productZoneCharges.length
+    ? Math.max(...productZoneCharges)
+    : Number(globalDelivery[currentZone] || 0);
 
   useEffect(() => {
     api("/settings/delivery", { auth: false })
       .then((r) => {
-        const val = Number(r.deliveryCharge || 80);
-        setGlobalDelivery(val);
+        const d = r.deliveryCharges || {};
+        setGlobalDelivery({
+          dhaka: Math.max(0, Number(d.dhaka ?? 60)),
+          ashulia: Math.max(0, Number(d.ashulia ?? 80)),
+          outside: Math.max(0, Number(d.outside ?? 130)),
+        });
       })
       .catch(() => {});
   }, []);
@@ -2309,10 +2422,16 @@ function Checkout() {
 
   const labelCls = "mb-1.5 block text-xs font-bold text-neutral-700";
 
-  // ✅ Delivery charge select options
-  const deliveryOptions = Array.from(new Set([autoDelivery, 80, 130, 0])).sort(
-    (a, b) => a - b,
-  );
+  // ✅ Delivery charge select options (per current zone)
+  const deliveryOptions = Array.from(
+    new Set([
+      autoDelivery,
+      Number(globalDelivery.dhaka),
+      Number(globalDelivery.ashulia),
+      Number(globalDelivery.outside),
+      0,
+    ]),
+  ).sort((a, b) => a - b);
 
   if (!cart.length) {
     return (
@@ -2676,7 +2795,7 @@ function Checkout() {
                         {deliveryOptions.map((v) => (
                           <option key={v} value={v}>
                             {v === autoDelivery
-                              ? `ডিফল্ট — ৳${v}`
+                              ? `${ZONE_LABELS[currentZone]} — ৳${v}`
                               : v === 0
                                 ? "ফ্রি ডেলিভারি — ৳0"
                                 : `৳${v}`}
@@ -2783,7 +2902,7 @@ function Checkout() {
                         {deliveryOptions.map((v) => (
                           <option key={v} value={v}>
                             {v === autoDelivery
-                              ? `ডিফল্ট — ৳${v}`
+                              ? `${ZONE_LABELS[currentZone]} — ৳${v}`
                               : v === 0
                                 ? "ফ্রি ডেলিভারি — ৳0"
                                 : `৳${v}`}
@@ -2861,7 +2980,9 @@ function Checkout() {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-neutral-500">ডেলিভারি</span>
+                      <span className="text-neutral-500">
+                        ডেলিভারি ({ZONE_LABELS[currentZone]})
+                      </span>
                       <span className="font-semibold tabular-nums">
                         {money(delivery)}
                       </span>
@@ -3701,6 +3822,7 @@ function Profile() {
             <div className="tie-orders-grid">
               {orders.map((order) => {
                 const status = String(order.status || "pending").toLowerCase();
+                const zone = order.deliveryZone;
 
                 return (
                   <article className="tie-order-card" key={order._id}>
@@ -3783,7 +3905,12 @@ function Profile() {
                       </div>
 
                       <div>
-                        <span>Delivery charge</span>
+                        <span>
+                          Delivery charge
+                          {zone && ZONE_LABELS[zone] ? (
+                            <> · {ZONE_LABELS[zone]}</>
+                          ) : null}
+                        </span>
                         <span>{money(order.deliveryCharge)}</span>
                       </div>
 
@@ -3936,7 +4063,7 @@ function AdminLogin() {
 }
 
 /* ============================================================ */
-/* Admin Navigation — with Delivery Settings link               */
+/* Admin Navigation                                             */
 /* ============================================================ */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
@@ -4101,7 +4228,7 @@ function Dashboard() {
 }
 
 /* ============================================================ */
-/* Admin Products — with delivery charge                        */
+/* Admin Products — with zone-wise delivery charges             */
 /* ============================================================ */
 function AdminProducts() {
   const queryClient = useQueryClient();
@@ -4116,7 +4243,9 @@ function AdminProducts() {
     cost: "",
     compareAtPrice: "",
     discountPercent: "",
-    deliveryCharge: "",
+    deliveryDhaka: "",
+    deliveryAshulia: "",
+    deliveryOutside: "",
     category: "Oversized T-shirt",
     description: "",
     sizes: "M, L, XL, XXL",
@@ -4163,13 +4292,17 @@ function AdminProducts() {
       sizeStockObj[s] = Number(prevStock[s] ?? 0);
     });
 
+    const dc = p.deliveryCharges || {};
+
     setF({
       title: p.title || "",
       price: String(p.price ?? ""),
       cost: String(p.cost ?? 0),
       compareAtPrice: String(p.compareAtPrice ?? ""),
       discountPercent: String(p.discountPercent ?? ""),
-      deliveryCharge: String(p.deliveryCharge ?? 0),
+      deliveryDhaka: String(dc.dhaka ?? 0),
+      deliveryAshulia: String(dc.ashulia ?? 0),
+      deliveryOutside: String(dc.outside ?? 0),
       category: p.category || "",
       description: p.description || "",
       sizes: sizeArr.join(", "),
@@ -4254,7 +4387,11 @@ function AdminProducts() {
         cost: Number(f.cost || 0),
         compareAtPrice: Number(f.compareAtPrice || 0),
         discountPercent: Number(f.discountPercent || 0),
-        deliveryCharge: Math.max(0, Number(f.deliveryCharge || 0)),
+        deliveryCharges: {
+          dhaka: Math.max(0, Number(f.deliveryDhaka || 0)),
+          ashulia: Math.max(0, Number(f.deliveryAshulia || 0)),
+          outside: Math.max(0, Number(f.deliveryOutside || 0)),
+        },
         category: f.category,
         description: f.description,
         stock: computedTotalStock,
@@ -4371,20 +4508,66 @@ function AdminProducts() {
             </label>
           ))}
 
-          {/* ✅ Per-product delivery charge */}
-          <label>
-            Delivery charge (৳){" "}
-            <span className="font-normal text-neutral-400">
-              (0 = global default)
-            </span>
-            <input
-              type="number"
-              min="0"
-              value={f.deliveryCharge}
-              onChange={(e) => setF({ ...f, deliveryCharge: e.target.value })}
-              placeholder="0 means use global default"
-            />
-          </label>
+          {/* ✅ Zone-wise delivery charges */}
+          <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
+              <Truck size={12} /> Delivery charges (৳)
+            </div>
+            <p className="mb-3 text-xs text-neutral-600">
+              0 দিলে global default use হবে। প্রতিটা zone-এর জন্য আলাদা charge
+              সেট করুন।
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold text-neutral-700">
+                  Inside Dhaka
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  value={f.deliveryDhaka}
+                  onChange={(e) =>
+                    setF({ ...f, deliveryDhaka: e.target.value })
+                  }
+                  placeholder="0 = global"
+                  className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-orange-500"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold text-neutral-700">
+                  Near Ashulia
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  value={f.deliveryAshulia}
+                  onChange={(e) =>
+                    setF({ ...f, deliveryAshulia: e.target.value })
+                  }
+                  placeholder="0 = global"
+                  className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-orange-500"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold text-neutral-700">
+                  Outside Dhaka
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  value={f.deliveryOutside}
+                  onChange={(e) =>
+                    setF({ ...f, deliveryOutside: e.target.value })
+                  }
+                  placeholder="0 = global"
+                  className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-orange-500"
+                />
+              </label>
+            </div>
+          </div>
 
           {sizeList.length > 0 && (
             <label className="span">
@@ -4529,6 +4712,9 @@ function AdminProducts() {
             const discount = getDiscountInfo(p);
             const stockObj = normalizeSizeStock(p.sizeStock);
             const hasSizeStock = Object.keys(stockObj).length > 0;
+            const dc = normalizeDeliveryCharges(p.deliveryCharges);
+            const hasCustomDelivery =
+              dc.dhaka > 0 || dc.ashulia > 0 || dc.outside > 0;
 
             return (
               <div className="adminrow" key={p._id}>
@@ -4545,15 +4731,6 @@ function AdminProducts() {
                       <span className="font-bold text-red-600">STOCK OUT</span>
                     ) : (
                       <>Stock {p.stock}</>
-                    )}
-                    {Number(p.deliveryCharge) > 0 && (
-                      <>
-                        {" "}
-                        ·{" "}
-                        <span className="font-bold text-emerald-600">
-                          Delivery ৳{Number(p.deliveryCharge)}
-                        </span>
-                      </>
                     )}
                     {discount.percent > 0 && (
                       <>
@@ -4572,6 +4749,26 @@ function AdminProducts() {
                       </>
                     )}
                   </small>
+
+                  {hasCustomDelivery && (
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                      {dc.dhaka > 0 && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 ring-1 ring-emerald-200">
+                          Dhaka: ৳{dc.dhaka}
+                        </span>
+                      )}
+                      {dc.ashulia > 0 && (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-700 ring-1 ring-blue-200">
+                          Ashulia: ৳{dc.ashulia}
+                        </span>
+                      )}
+                      {dc.outside > 0 && (
+                        <span className="rounded-full bg-violet-50 px-2 py-0.5 font-bold text-violet-700 ring-1 ring-violet-200">
+                          Outside: ৳{dc.outside}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {hasSizeStock && (
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
@@ -5030,6 +5227,11 @@ function NewOrders() {
                           {o.paymentStatus.replaceAll("_", " ")}
                         </span>
                       )}
+                      {o.deliveryZone && ZONE_LABELS[o.deliveryZone] && (
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 ring-1 ring-blue-200">
+                          {ZONE_LABELS[o.deliveryZone]}
+                        </span>
+                      )}
                     </div>
                     <p className="mt-1 truncate text-sm font-extrabold text-neutral-900 sm:text-base">
                       {o.customerName}
@@ -5151,7 +5353,7 @@ function NewOrders() {
 }
 
 /* ============================================================ */
-/* Admin Orders — + Delivery Charge override + Delete           */
+/* Admin Orders                                                 */
 /* ============================================================ */
 const ORDER_STATUS_META = {
   pending: {
@@ -5300,7 +5502,6 @@ function AdminOrders() {
     }
   }
 
-  // ✅ Delete order
   async function deleteOrder(id, orderNumber) {
     const result = await Swal.fire({
       title: "Delete this order?",
@@ -5615,6 +5816,7 @@ function AdminOrders() {
               PAYMENT_STATUS_META.not_required;
             const StatusIcon = statusMeta.icon;
             const expanded = expandedId === o._id;
+            const zone = o.deliveryZone;
 
             return (
               <article
@@ -5644,6 +5846,11 @@ function AdminOrders() {
                             className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
                           >
                             {paymentMeta.label}
+                          </span>
+                        )}
+                        {zone && ZONE_LABELS[zone] && (
+                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 ring-1 ring-blue-200">
+                            {ZONE_LABELS[zone]}
                           </span>
                         )}
                       </div>
@@ -5727,6 +5934,17 @@ function AdminOrders() {
                               <span>
                                 {o.address}
                                 {o.city ? `, ${o.city}` : ""}
+                              </span>
+                            </p>
+                          )}
+                          {zone && ZONE_LABELS[zone] && (
+                            <p className="flex items-center gap-2 text-neutral-700">
+                              <Truck
+                                size={14}
+                                className="shrink-0 text-neutral-400"
+                              />
+                              <span className="text-xs font-bold text-blue-700">
+                                {ZONE_LABELS[zone]}
                               </span>
                             </p>
                           )}
@@ -5844,7 +6062,6 @@ function AdminOrders() {
                         </div>
                       </div>
 
-                      {/* ✅ Delivery charge override */}
                       <div>
                         <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
                           Delivery charge (override)
@@ -5875,13 +6092,6 @@ function AdminOrders() {
                               className="min-h-10 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
                             >
                               Make Free
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateDeliveryCharge(o._id, 80)}
-                              className="min-h-10 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
-                            >
-                              Reset ৳80
                             </button>
                           </div>
                           <p className="mt-2 text-[10px] text-neutral-500">
@@ -5950,7 +6160,6 @@ function AdminOrders() {
                         </div>
                       </div>
 
-                      {/* ✅ Delete order — Danger zone */}
                       <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-3">
                         <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-red-700">
                           Danger zone
@@ -5979,11 +6188,11 @@ function AdminOrders() {
 }
 
 /* ============================================================ */
-/* Admin Delivery Settings                                      */
+/* Admin Delivery Settings — zone-wise                          */
 /* ============================================================ */
 function AdminDeliverySettings() {
   const queryClient = useQueryClient();
-  const [charge, setCharge] = useState("");
+  const [f, setF] = useState({ dhaka: "", ashulia: "", outside: "" });
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -5993,10 +6202,14 @@ function AdminDeliverySettings() {
   });
 
   useEffect(() => {
-    if (data?.globalDeliveryCharge !== undefined) {
-      setCharge(String(data.globalDeliveryCharge));
+    if (data?.deliveryCharges) {
+      setF({
+        dhaka: String(data.deliveryCharges.dhaka ?? 60),
+        ashulia: String(data.deliveryCharges.ashulia ?? 80),
+        outside: String(data.deliveryCharges.outside ?? 130),
+      });
     }
-  }, [data?.globalDeliveryCharge]);
+  }, [data?.deliveryCharges]);
 
   async function save(e) {
     e.preventDefault();
@@ -6005,10 +6218,14 @@ function AdminDeliverySettings() {
       await api("/admin/settings", {
         method: "PATCH",
         body: JSON.stringify({
-          globalDeliveryCharge: Math.max(0, Number(charge || 0)),
+          deliveryCharges: {
+            dhaka: Math.max(0, Number(f.dhaka || 0)),
+            ashulia: Math.max(0, Number(f.ashulia || 0)),
+            outside: Math.max(0, Number(f.outside || 0)),
+          },
         }),
       });
-      msg("Global delivery charge updated");
+      msg("Global delivery charges updated");
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-settings"] }),
@@ -6026,41 +6243,52 @@ function AdminDeliverySettings() {
       <Heading
         tag="SHIPPING"
         title="Delivery settings."
-        desc="সব product-এর জন্য একই delivery charge সেট করুন।"
+        desc="৩টা zone-এর জন্য global delivery charge সেট করুন। প্রতিটা product-এ আলাদা charge থাকলে সেটা priority পাবে।"
       />
 
       {isLoading ? (
         <Loader text="Loading settings" />
       ) : (
         <form className="box stack" onSubmit={save}>
-          <h2>Global delivery charge</h2>
+          <h2>Global delivery charges</h2>
           <p className="text-sm text-neutral-500">
-            এই চার্জ সেইসব product-এ প্রয়োগ হবে যেগুলোতে আলাদা delivery charge
-            সেট করা নেই।
+            এই চার্জ সেইসব product-এ প্রযোজ্য হবে যেগুলোতে zone-specific charge
+            সেট করা নেই (0)।
           </p>
 
-          <label>
-            Delivery charge (৳)
-            <input
-              type="number"
-              min="0"
-              value={charge}
-              onChange={(e) => setCharge(e.target.value)}
-              required
-            />
-          </label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label>
+              Inside Dhaka (৳)
+              <input
+                type="number"
+                min="0"
+                value={f.dhaka}
+                onChange={(e) => setF({ ...f, dhaka: e.target.value })}
+                required
+              />
+            </label>
 
-          <div className="flex flex-wrap gap-2">
-            {[0, 60, 80, 100, 130].map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setCharge(String(v))}
-                className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
-              >
-                ৳{v}
-              </button>
-            ))}
+            <label>
+              Near Ashulia (৳)
+              <input
+                type="number"
+                min="0"
+                value={f.ashulia}
+                onChange={(e) => setF({ ...f, ashulia: e.target.value })}
+                required
+              />
+            </label>
+
+            <label>
+              Outside Dhaka (৳)
+              <input
+                type="number"
+                min="0"
+                value={f.outside}
+                onChange={(e) => setF({ ...f, outside: e.target.value })}
+                required
+              />
+            </label>
           </div>
 
           <button className="btn orange" disabled={busy}>
@@ -6070,7 +6298,7 @@ function AdminDeliverySettings() {
               </>
             ) : (
               <>
-                Save global delivery <Check size={16} />
+                Save global delivery charges <Check size={16} />
               </>
             )}
           </button>
