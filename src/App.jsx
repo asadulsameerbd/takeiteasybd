@@ -48,6 +48,8 @@ import {
   Bell,
   Download,
   Calendar,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import MetaPixel from "./MetaPixel";
 import pixel from "./lib/pixel";
@@ -156,16 +158,34 @@ function isSizeAvailable(product, size) {
   return getSizeStock(product, size) > 0;
 }
 
+/**
+ * ✅ FIXED: `isProductOutOfStock`
+ * - `sizeStock`-এ কোনো size থাকলে তার total দেখে
+ * - কিছু না থাকলে `stock` দেখে
+ * - সব ক্ষেত্রে numeric coercion
+ */
 function isProductOutOfStock(p) {
+  if (!p) return true;
+
   const stockObj = normalizeSizeStock(p.sizeStock);
-  if (Object.keys(stockObj).length > 0) {
-    const total = Object.values(stockObj).reduce(
-      (s, n) => s + Number(n || 0),
+  const sizeKeys = Object.keys(stockObj);
+
+  if (sizeKeys.length > 0) {
+    const total = sizeKeys.reduce(
+      (sum, key) => sum + Number(stockObj[key] || 0),
       0,
     );
     return total <= 0;
   }
+
   return Number(p.stock || 0) <= 0;
+}
+
+/**
+ * ✅ Helper: admin list-এ hidden কিনা
+ */
+function isProductHidden(p) {
+  return p?.active === false;
 }
 
 /* ============================================================ */
@@ -668,8 +688,8 @@ function Home() {
       api("/banners", { auth: false }),
     ])
       .then(([p, b]) => {
-        setProducts(p);
-        setBanners(b);
+        setProducts(Array.isArray(p) ? p : []);
+        setBanners(Array.isArray(b) ? b : []);
       })
       .catch((e) => msg(e.message, "error"))
       .finally(() => setLoading(false));
@@ -725,7 +745,11 @@ function Home() {
     };
   }, []);
 
-  const inStockProducts = products.filter((p) => !isProductOutOfStock(p));
+  /**
+   * ✅ FIXED: সব in-stock product সরাসরি দেখানো হচ্ছে।
+   * Out-of-stock product hide হবে না — Card-এ "Stock Out" badge দেখাবে।
+   */
+  const inStockProducts = products;
 
   const b = banners[slide];
 
@@ -847,23 +871,23 @@ function Home() {
 
         {loading ? (
           <Loader text="Fetching the good stuff" />
-        ) : inStockProducts.length ? (
+        ) : products.length ? (
           <>
             <div className="grid">
-              {inStockProducts.slice(0, visible).map((p) => (
+              {products.slice(0, visible).map((p) => (
                 <Card key={p._id} p={p} add={add} />
               ))}
             </div>
 
             <div ref={sentinel} className="scrollsentinel" aria-hidden="true" />
 
-            {visible < inStockProducts.length && (
+            {visible < products.length && (
               <p className="loadmore">Loading more pieces…</p>
             )}
           </>
         ) : (
           <div className="empty">
-            No products are currently in stock. Please check back soon.
+            No products are currently available. Please check back soon.
           </div>
         )}
       </section>
@@ -946,6 +970,9 @@ function Products() {
 
   const filteredProducts = products
     .filter((p) => {
+      // ✅ Hidden product skip
+      if (isProductHidden(p)) return false;
+
       const price = Number(p.price) || 0;
       const categoryMatch =
         selectedCategory === "All" || p.category === selectedCategory;
@@ -4254,6 +4281,7 @@ function AdminProducts() {
     gsm: "220 GSM",
     tags: "",
     imageUrls: "",
+    active: true, // ✅ FIXED: active flag form-এ
   };
 
   const [f, setF] = useState(emptyForm);
@@ -4286,10 +4314,11 @@ function AdminProducts() {
     const prevStock = normalizeSizeStock(p.sizeStock);
     const sizeStockObj = {};
     sizeArr.forEach((s) => {
-      sizeStockObj[s] = Number(prevStock[s] ?? 0);
+      // ✅ FIXED: Number coercion + safe fallback
+      sizeStockObj[s] = Math.max(0, Number(prevStock[s] ?? 0));
     });
 
-    const dc = p.deliveryCharges || {};
+    const dc = normalizeDeliveryCharges(p.deliveryCharges);
 
     setF({
       title: p.title || "",
@@ -4310,6 +4339,7 @@ function AdminProducts() {
       gsm: p.gsm || "",
       tags: (p.tags || []).join(", "),
       imageUrls: (p.images || []).join("\n"),
+      active: p.active !== false, // ✅ FIXED: preserve active state
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4404,6 +4434,7 @@ function AdminProducts() {
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
+        active: f.active !== false, // ✅ FIXED: active preserved
       };
 
       if (editingId) {
@@ -4632,6 +4663,33 @@ function AdminProducts() {
             )}
           </div>
 
+          {/* ✅ FIXED: Active toggle */}
+          <div className="span rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-3">
+            <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+              {f.active ? <Eye size={12} /> : <EyeOff size={12} />} Visibility
+            </div>
+
+            <label className="mt-2 flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={f.active}
+                onChange={(e) => setF({ ...f, active: e.target.checked })}
+                className="mt-1 h-4 w-4 cursor-pointer accent-emerald-600"
+              />
+              <div>
+                <span className="block text-sm font-bold text-neutral-800">
+                  {f.active
+                    ? "Product is live on the store"
+                    : "Product is hidden"}
+                </span>
+                <span className="block text-xs text-neutral-500">
+                  Unchecked করলে store-এ product দেখা যাবে না, কিন্তু database-এ
+                  থাকবে।
+                </span>
+              </div>
+            </label>
+          </div>
+
           <label className="span">
             Upload images (multiple, 5 MB each max)
             <input
@@ -4692,9 +4750,13 @@ function AdminProducts() {
             const hasSizeStock = Object.keys(stockObj).length > 0;
             const dc = normalizeDeliveryCharges(p.deliveryCharges);
             const hasCustomDelivery = dc.dhaka > 0 || dc.outside > 0;
+            const hidden = isProductHidden(p);
 
             return (
-              <div className="adminrow" key={p._id}>
+              <div
+                className={`adminrow ${hidden ? "opacity-60" : ""}`}
+                key={p._id}
+              >
                 <img
                   src={p.images?.[0] || "https://placehold.co/80x90"}
                   alt=""
@@ -4702,6 +4764,11 @@ function AdminProducts() {
 
                 <div>
                   <b>{p.title}</b>
+                  {hidden && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-700">
+                      <EyeOff size={10} /> Hidden
+                    </span>
+                  )}
                   <small>
                     {money(p.price)} · {p.category} ·{" "}
                     {isProductOutOfStock(p) ? (
