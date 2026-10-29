@@ -4,21 +4,36 @@ const API_BASE = (
   "https://take-it-easy-bd-server.vercel.app/api"
 ).replace(/\/+$/, "");
 
-// ✅ Priority: admin token → customer token
-function getToken() {
+// ✅ Priority: path অনুযায়ী টোকেন খোঁজা (Admin vs Customer)
+function getToken(path = "") {
   try {
-    const adminRaw = localStorage.getItem("tie_auth");
-    if (adminRaw) {
-      const adminData = JSON.parse(adminRaw);
-      if (adminData?.adminToken)
-        return { type: "admin", token: adminData.adminToken };
+    const isAdminRoute = path.includes("/admin");
+
+    // ১. অ্যাডমিন রিকোয়েস্ট হলে অ্যাডমিন টোকেন
+    if (isAdminRoute) {
+      const adminRaw = localStorage.getItem("tie_auth");
+      if (adminRaw) {
+        const adminData = JSON.parse(adminRaw);
+        if (adminData?.adminToken) return adminData.adminToken;
+      }
     }
+
+    // ২. কাস্টমার রিকোয়েস্ট হলে কাস্টমার টোকেন
     const customerRaw = localStorage.getItem("tie_customer");
     if (customerRaw) {
       const customerData = JSON.parse(customerRaw);
-      if (customerData?.token)
-        return { type: "customer", token: customerData.token };
+      if (customerData?.token) return customerData.token;
     }
+
+    // ৩. Fallback (যদি অ্যাডমিন রিকোয়েস্ট না হয় কিন্তু অ্যাডমিন টোকেন থাকে)
+    if (!isAdminRoute) {
+      const adminRaw = localStorage.getItem("tie_auth");
+      if (adminRaw) {
+        const adminData = JSON.parse(adminRaw);
+        if (adminData?.adminToken) return adminData.adminToken;
+      }
+    }
+
     return null;
   } catch {
     return null;
@@ -34,17 +49,29 @@ export async function api(path, options = {}) {
   } = options;
 
   const safePath = path.startsWith("/") ? path : `/${path}`;
-  const headers = { "Content-Type": "application/json", ...extraHeaders };
+  const headers = { ...extraHeaders };
 
+  // ✅ Content-Type সেট করা
+  if (body && typeof body !== "string") {
+    headers["Content-Type"] = "application/json";
+  }
+
+  // ✅ টোকেন সেট করা
   if (auth) {
-    const authData = getToken();
-    if (authData?.token) headers.Authorization = `Bearer ${authData.token}`;
+    const token = getToken(safePath);
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  // ✅ Body handle (object হলে stringify করবে)
+  let finalBody = undefined;
+  if (body) {
+    finalBody = typeof body === "string" ? body : JSON.stringify(body);
   }
 
   const res = await fetch(`${API_BASE}${safePath}`, {
     method,
     headers,
-    body,
+    body: finalBody,
     cache: "no-store",
   });
 
@@ -62,11 +89,12 @@ export async function api(path, options = {}) {
 }
 
 export async function apiFetch(path) {
-  const authData = getToken();
-  const headers = {};
-  if (authData?.token) headers.Authorization = `Bearer ${authData.token}`;
-
   const safePath = path.startsWith("/") ? path : `/${path}`;
+  const token = getToken(safePath);
+
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const res = await fetch(`${API_BASE}${safePath}`, {
     headers,
     cache: "no-store",
