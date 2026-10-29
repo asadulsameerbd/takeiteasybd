@@ -159,7 +159,7 @@ function isSizeAvailable(product, size) {
 }
 
 /**
- * ✅ FIXED: `isProductOutOfStock`
+ * ✅ `isProductOutOfStock`
  * - `sizeStock`-এ কোনো size থাকলে তার total দেখে
  * - কিছু না থাকলে `stock` দেখে
  * - সব ক্ষেত্রে numeric coercion
@@ -181,9 +181,6 @@ function isProductOutOfStock(p) {
   return Number(p.stock || 0) <= 0;
 }
 
-/**
- * ✅ Helper: admin list-এ hidden কিনা
- */
 function isProductHidden(p) {
   return p?.active === false;
 }
@@ -705,15 +702,24 @@ function Home() {
     return () => clearInterval(id);
   }, [banners.length, slide]);
 
+  /**
+   * ✅ FIXED: Home-এ শুধু in-stock product দেখাবে।
+   * Out-of-stock product hide হবে Home থেকে।
+   */
+  const inStockProducts = useMemo(
+    () => products.filter((p) => !isProductOutOfStock(p)),
+    [products],
+  );
+
   useEffect(() => {
     const el = sentinel.current;
 
-    if (!el || visible >= products.length) return;
+    if (!el || visible >= inStockProducts.length) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setVisible((v) => Math.min(v + 8, products.length));
+          setVisible((v) => Math.min(v + 8, inStockProducts.length));
         }
       },
       { rootMargin: "250px" },
@@ -722,7 +728,7 @@ function Home() {
     observer.observe(el);
 
     return () => observer.disconnect();
-  }, [visible, products.length]);
+  }, [visible, inStockProducts.length]);
 
   function goToSlide(nextIndex) {
     if (nextIndex === slide) return;
@@ -744,12 +750,6 @@ function Home() {
       if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
     };
   }, []);
-
-  /**
-   * ✅ FIXED: সব in-stock product সরাসরি দেখানো হচ্ছে।
-   * Out-of-stock product hide হবে না — Card-এ "Stock Out" badge দেখাবে।
-   */
-  const inStockProducts = products;
 
   const b = banners[slide];
 
@@ -871,23 +871,23 @@ function Home() {
 
         {loading ? (
           <Loader text="Fetching the good stuff" />
-        ) : products.length ? (
+        ) : inStockProducts.length ? (
           <>
             <div className="grid">
-              {products.slice(0, visible).map((p) => (
+              {inStockProducts.slice(0, visible).map((p) => (
                 <Card key={p._id} p={p} add={add} />
               ))}
             </div>
 
             <div ref={sentinel} className="scrollsentinel" aria-hidden="true" />
 
-            {visible < products.length && (
+            {visible < inStockProducts.length && (
               <p className="loadmore">Loading more pieces…</p>
             )}
           </>
         ) : (
           <div className="empty">
-            No products are currently available. Please check back soon.
+            No products are currently in stock. Please check back soon.
           </div>
         )}
       </section>
@@ -968,33 +968,59 @@ function Products() {
     ...products.map((p) => Number(p.price) || 0),
   );
 
-  const filteredProducts = products
-    .filter((p) => {
-      // ✅ Hidden product skip
-      if (isProductHidden(p)) return false;
+  /**
+   * ✅ Sorted product list:
+   *   1. Filter (hidden skip, category/price match)
+   *   2. Stock-out সবসময় last
+   *   3. Stock same হলে user-selected sort apply
+   */
+  const filteredProducts = useMemo(() => {
+    return products
+      .filter((p) => {
+        if (isProductHidden(p)) return false;
 
-      const price = Number(p.price) || 0;
-      const categoryMatch =
-        selectedCategory === "All" || p.category === selectedCategory;
-      const priceMatch = price >= minPrice && price <= maxPrice;
-      return categoryMatch && priceMatch;
-    })
-    .sort((a, b) => {
-      const aOut = isProductOutOfStock(a);
-      const bOut = isProductOutOfStock(b);
-      if (aOut !== bOut) return aOut ? 1 : -1;
+        const price = Number(p.price) || 0;
+        const categoryMatch =
+          selectedCategory === "All" || p.category === selectedCategory;
+        const priceMatch = price >= minPrice && price <= maxPrice;
+        return categoryMatch && priceMatch;
+      })
+      .sort((a, b) => {
+        const aOut = isProductOutOfStock(a);
+        const bOut = isProductOutOfStock(b);
+        if (aOut !== bOut) return aOut ? 1 : -1;
 
-      switch (sortBy) {
-        case "price-low":
-          return Number(a.price || 0) - Number(b.price || 0);
-        case "price-high":
-          return Number(b.price || 0) - Number(a.price || 0);
-        case "name":
-          return (a.title || "").localeCompare(b.title || "");
-        default:
-          return 0;
-      }
-    });
+        switch (sortBy) {
+          case "price-low":
+            return Number(a.price || 0) - Number(b.price || 0);
+          case "price-high":
+            return Number(b.price || 0) - Number(a.price || 0);
+          case "name":
+            return (a.title || "").localeCompare(b.title || "");
+          default:
+            return 0;
+        }
+      });
+  }, [products, selectedCategory, minPrice, maxPrice, sortBy]);
+
+  // ✅ Split for sectioned rendering
+  const inStockFiltered = useMemo(
+    () => filteredProducts.filter((p) => !isProductOutOfStock(p)),
+    [filteredProducts],
+  );
+
+  const outOfStockFiltered = useMemo(
+    () => filteredProducts.filter((p) => isProductOutOfStock(p)),
+    [filteredProducts],
+  );
+
+  /**
+   * ✅ How many visible in-stock items vs how many stock-out
+   * (stock-out সবসময় in-stock শেষ হওয়ার পরে visible হবে)
+   */
+  const visibleInStock = inStockFiltered.slice(0, visible);
+  const remainingSlots = Math.max(0, visible - visibleInStock.length);
+  const visibleOutOfStock = outOfStockFiltered.slice(0, remainingSlots);
 
   function resetFilters() {
     setSelectedCategory("All");
@@ -1156,7 +1182,10 @@ function Products() {
                   <>
                     Showing{" "}
                     <span className="font-bold text-neutral-900">
-                      {Math.min(visible, filteredProducts.length)}
+                      {Math.min(
+                        visible,
+                        visibleInStock.length + visibleOutOfStock.length,
+                      )}
                     </span>{" "}
                     of {filteredProducts.length} products
                   </>
@@ -1176,13 +1205,38 @@ function Products() {
               <Loader text="Fetching products" />
             ) : filteredProducts.length > 0 ? (
               <>
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 sm:gap-5">
-                  {filteredProducts.slice(0, visible).map((p) => (
-                    <div key={p._id} className="min-w-0">
-                      <Card p={p} add={add} />
+                {/* ✅ In-stock products first */}
+                {visibleInStock.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 sm:gap-5">
+                    {visibleInStock.map((p) => (
+                      <div key={p._id} className="min-w-0">
+                        <Card p={p} add={add} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ✅ Stock-out products — labeled section, সবসময় last */}
+                {visibleOutOfStock.length > 0 && (
+                  <div className="mt-10">
+                    <div className="mb-4 flex items-center gap-3">
+                      <span className="h-px flex-1 bg-neutral-200" />
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-stone-500">
+                        <XCircle size={12} /> Stock Out (
+                        {outOfStockFiltered.length})
+                      </span>
+                      <span className="h-px flex-1 bg-neutral-200" />
                     </div>
-                  ))}
-                </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 sm:gap-5">
+                      {visibleOutOfStock.map((p) => (
+                        <div key={p._id} className="min-w-0">
+                          <Card p={p} add={add} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {visible < filteredProducts.length && (
                   <div className="mt-10 flex justify-center sm:mt-14">
@@ -2172,13 +2226,11 @@ function Checkout() {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // ✅ Global delivery charges (২টা zone)
   const [globalDelivery, setGlobalDelivery] = useState({
     dhaka: 60,
     outside: 130,
   });
 
-  // ✅ Customer-selected zone — default from city auto-detect
   const [selectedZone, setSelectedZone] = useState("dhaka");
   const [delivery, setDelivery] = useState(0);
 
@@ -2198,16 +2250,13 @@ function Checkout() {
   const change = (e) => setF({ ...f, [e.target.name]: e.target.value });
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-  // ✅ Auto-detect zone from city/address (auto-update selectedZone)
   const detectedZone = detectDeliveryZone(f.city, f.address);
 
-  // ✅ When user types city/address, auto-suggest zone
   useEffect(() => {
     setSelectedZone(detectedZone);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detectedZone]);
 
-  // ✅ Auto delivery calculation based on selectedZone
   const productZoneCharges = cart
     .map((item) => {
       const dc = normalizeDeliveryCharges(item.deliveryCharges);
@@ -2463,7 +2512,6 @@ function Checkout() {
     );
   }
 
-  /* ✅ Zone selector — 2 big buttons */
   const zoneSelector = (
     <div className="grid grid-cols-2 gap-2.5">
       {[
@@ -2836,7 +2884,6 @@ function Checkout() {
                     </label>
                   </div>
 
-                  {/* ✅ 2-zone selector */}
                   <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
                     <span className="mb-2 block text-xs font-bold text-neutral-700">
                       ডেলিভারি এরিয়া নির্বাচন করুন
@@ -4281,7 +4328,7 @@ function AdminProducts() {
     gsm: "220 GSM",
     tags: "",
     imageUrls: "",
-    active: true, // ✅ FIXED: active flag form-এ
+    active: true,
   };
 
   const [f, setF] = useState(emptyForm);
@@ -4314,7 +4361,6 @@ function AdminProducts() {
     const prevStock = normalizeSizeStock(p.sizeStock);
     const sizeStockObj = {};
     sizeArr.forEach((s) => {
-      // ✅ FIXED: Number coercion + safe fallback
       sizeStockObj[s] = Math.max(0, Number(prevStock[s] ?? 0));
     });
 
@@ -4339,7 +4385,7 @@ function AdminProducts() {
       gsm: p.gsm || "",
       tags: (p.tags || []).join(", "),
       imageUrls: (p.images || []).join("\n"),
-      active: p.active !== false, // ✅ FIXED: preserve active state
+      active: p.active !== false,
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4434,7 +4480,7 @@ function AdminProducts() {
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
-        active: f.active !== false, // ✅ FIXED: active preserved
+        active: f.active !== false,
       };
 
       if (editingId) {
@@ -4534,7 +4580,6 @@ function AdminProducts() {
             </label>
           ))}
 
-          {/* ✅ ২টা zone delivery charges */}
           <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
             <div className="mb-2 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
               <Truck size={12} /> Delivery charges (৳)
@@ -4663,7 +4708,6 @@ function AdminProducts() {
             )}
           </div>
 
-          {/* ✅ FIXED: Active toggle */}
           <div className="span rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-3">
             <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
               {f.active ? <Eye size={12} /> : <EyeOff size={12} />} Visibility
