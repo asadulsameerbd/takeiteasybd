@@ -5,9 +5,14 @@ import React, {
   useMemo,
   useState,
 } from "react";
+
 import { api } from "../api";
 
 const C = createContext(null);
+
+// ============================================================
+// Local Storage Helpers
+// ============================================================
 
 function readCustomer() {
   try {
@@ -29,107 +34,222 @@ function readAdminToken() {
 
 function saveCustomer(data) {
   try {
-    if (!data) localStorage.removeItem("tie_customer");
-    else localStorage.setItem("tie_customer", JSON.stringify(data));
-  } catch {}
+    if (!data) {
+      localStorage.removeItem("tie_customer");
+    } else {
+      localStorage.setItem("tie_customer", JSON.stringify(data));
+    }
+  } catch (error) {
+    console.error("Customer storage error:", error);
+  }
 }
 
 function saveAdminToken(token) {
   try {
-    if (!token) localStorage.removeItem("tie_auth");
-    else
+    if (!token) {
+      localStorage.removeItem("tie_auth");
+    } else {
       localStorage.setItem("tie_auth", JSON.stringify({ adminToken: token }));
-  } catch {}
+    }
+  } catch (error) {
+    console.error("Admin storage error:", error);
+  }
 }
 
-// ✅ user object-এ সবসময় `id` আর `_id` দুটোই থাকবে (defensive)
+// ============================================================
+// Normalize User
+// ============================================================
+
 function normalizeUser(user) {
   if (!user) return null;
+
   const id = user.id || user._id;
-  return { ...user, id, _id: id };
+
+  return {
+    ...user,
+    id,
+    _id: id,
+  };
 }
 
 function normalizeCustomer(payload) {
   if (!payload?.token) return null;
-  return { ...payload, user: normalizeUser(payload.user) };
+
+  return {
+    ...payload,
+    user: normalizeUser(payload.user),
+  };
 }
+
+// ============================================================
+// Auth Provider
+// ============================================================
 
 export function AuthProvider({ children }) {
   const [customer, setCustomer] = useState(() =>
     normalizeCustomer(readCustomer()),
   );
+
   const [adminToken, setAdminToken] = useState(() => readAdminToken());
 
+  // ==========================================================
+  // Sync Customer Token
+  // ==========================================================
+
   useEffect(() => {
-    if (customer?.token) localStorage.setItem("tie_token", customer.token);
-    else localStorage.removeItem("tie_token");
+    try {
+      if (customer?.token) {
+        localStorage.setItem("tie_token", customer.token);
+      } else {
+        localStorage.removeItem("tie_token");
+      }
+    } catch (error) {
+      console.error("Customer token storage error:", error);
+    }
   }, [customer]);
 
+  // ==========================================================
+  // Customer Login
+  // ==========================================================
+
   async function customerLogin(data) {
-    const x = await api("/auth/login", {
+    const response = await api("/auth/login", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: data,
       auth: false,
     });
-    const normalized = normalizeCustomer(x);
+
+    const normalized = normalizeCustomer(response);
+
+    if (!normalized) {
+      throw new Error("Customer login failed. Invalid server response.");
+    }
+
     saveCustomer(normalized);
     setCustomer(normalized);
+
     return normalized;
   }
+
+  // ==========================================================
+  // Customer Registration
+  // ==========================================================
 
   async function registerCustomer(data) {
-    const x = await api("/auth/register", {
+    const response = await api("/auth/register", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: data,
       auth: false,
     });
-    const normalized = normalizeCustomer(x);
+
+    const normalized = normalizeCustomer(response);
+
+    if (!normalized) {
+      throw new Error("Registration failed. Invalid server response.");
+    }
+
     saveCustomer(normalized);
     setCustomer(normalized);
+
     return normalized;
   }
 
+  // ==========================================================
+  // Customer Logout
+  // ==========================================================
+
   function logoutCustomer() {
-    localStorage.removeItem("tie_customer");
-    localStorage.removeItem("tie_token");
+    try {
+      localStorage.removeItem("tie_customer");
+      localStorage.removeItem("tie_token");
+    } catch (error) {
+      console.error("Customer logout error:", error);
+    }
+
     setCustomer(null);
   }
 
+  // ==========================================================
+  // Update Customer Profile
+  // ==========================================================
+
   async function updateProfile(data) {
-    const x = await api("/auth/profile", {
+    if (!customer?.token) {
+      throw new Error("Please login first.");
+    }
+
+    const response = await api("/auth/profile", {
       method: "PATCH",
-      body: JSON.stringify(data),
+      body: data,
     });
-    const n = { ...customer, user: normalizeUser(x.user) };
-    saveCustomer(n);
-    setCustomer(n);
-    return n.user;
+
+    const updatedCustomer = {
+      ...customer,
+      user: normalizeUser(response.user),
+    };
+
+    saveCustomer(updatedCustomer);
+    setCustomer(updatedCustomer);
+
+    return updatedCustomer.user;
   }
 
+  // ==========================================================
+  // Admin Login
+  // ==========================================================
+
   async function loginAdmin(data) {
-    const x = await api("/admin/login", {
+    const email = String(data?.email || "").trim();
+    const password = String(data?.password || "");
+
+    if (!email || !password) {
+      throw new Error("Admin email and password are required.");
+    }
+
+    const response = await api("/admin/login", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: {
+        email,
+        password,
+      },
       auth: false,
     });
-    saveAdminToken(x.token);
-    setAdminToken(x.token);
-    return x;
+
+    if (!response?.token) {
+      throw new Error(
+        response?.message || "Admin login failed. Token not received.",
+      );
+    }
+
+    saveAdminToken(response.token);
+    setAdminToken(response.token);
+
+    return response;
   }
+
+  // ==========================================================
+  // Admin Logout
+  // ==========================================================
 
   function logoutAdmin() {
     saveAdminToken("");
     setAdminToken("");
   }
 
+  // ==========================================================
+  // Context Value
+  // ==========================================================
+
   const value = useMemo(
     () => ({
       customer,
       adminToken,
+
       customerLogin,
       registerCustomer,
       logoutCustomer,
       updateProfile,
+
       loginAdmin,
       logoutAdmin,
     }),
@@ -138,5 +258,9 @@ export function AuthProvider({ children }) {
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
+
+// ============================================================
+// Auth Hook
+// ============================================================
 
 export const useAuth = () => useContext(C);

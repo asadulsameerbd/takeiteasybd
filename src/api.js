@@ -1,40 +1,20 @@
-// api.js
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
   "https://take-it-easy-bd-server.vercel.app/api"
 ).replace(/\/+$/, "");
 
-// ✅ Priority: path অনুযায়ী টোকেন খোঁজা (Admin vs Customer)
+// Admin ও Customer token আলাদা রাখা হয়েছে
 function getToken(path = "") {
   try {
-    const isAdminRoute = path.includes("/admin");
+    const isAdminRoute = path.startsWith("/admin");
 
-    // ১. অ্যাডমিন রিকোয়েস্ট হলে অ্যাডমিন টোকেন
     if (isAdminRoute) {
-      const adminRaw = localStorage.getItem("tie_auth");
-      if (adminRaw) {
-        const adminData = JSON.parse(adminRaw);
-        if (adminData?.adminToken) return adminData.adminToken;
-      }
+      const raw = localStorage.getItem("tie_auth");
+      return raw ? JSON.parse(raw)?.adminToken || null : null;
     }
 
-    // ২. কাস্টমার রিকোয়েস্ট হলে কাস্টমার টোকেন
-    const customerRaw = localStorage.getItem("tie_customer");
-    if (customerRaw) {
-      const customerData = JSON.parse(customerRaw);
-      if (customerData?.token) return customerData.token;
-    }
-
-    // ৩. Fallback (যদি অ্যাডমিন রিকোয়েস্ট না হয় কিন্তু অ্যাডমিন টোকেন থাকে)
-    if (!isAdminRoute) {
-      const adminRaw = localStorage.getItem("tie_auth");
-      if (adminRaw) {
-        const adminData = JSON.parse(adminRaw);
-        if (adminData?.adminToken) return adminData.adminToken;
-      }
-    }
-
-    return null;
+    const raw = localStorage.getItem("tie_customer");
+    return raw ? JSON.parse(raw)?.token || null : null;
   } catch {
     return null;
   }
@@ -49,97 +29,107 @@ export async function api(path, options = {}) {
   } = options;
 
   const safePath = path.startsWith("/") ? path : `/${path}`;
-  const headers = { ...extraHeaders };
+  const headers = { Accept: "application/json", ...extraHeaders };
 
-  // ✅ Content-Type সেট করা
-  if (body && typeof body !== "string") {
-    headers["Content-Type"] = "application/json";
+  let finalBody;
+
+  if (body !== undefined && body !== null) {
+    if (body instanceof FormData) {
+      finalBody = body;
+    } else {
+      headers["Content-Type"] = "application/json";
+      finalBody = typeof body === "string" ? body : JSON.stringify(body);
+    }
   }
 
-  // ✅ টোকেন সেট করা
   if (auth) {
     const token = getToken(safePath);
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
   }
 
-  // ✅ Body handle (object হলে stringify করবে)
-  let finalBody = undefined;
-  if (body) {
-    finalBody = typeof body === "string" ? body : JSON.stringify(body);
-  }
+  let response;
 
-  const res = await fetch(`${API_BASE}${safePath}`, {
-    method,
-    headers,
-    body: finalBody,
-    cache: "no-store",
-  });
-
-  const text = await res.text();
-  let data = null;
   try {
-    data = text ? JSON.parse(text) : null;
+    response = await fetch(`${API_BASE}${safePath}`, {
+      method,
+      headers,
+      body: finalBody,
+      cache: "no-store",
+    });
   } catch {
-    data = { message: text };
+    throw new Error("Server connection failed. Please try again.");
   }
 
-  if (!res.ok)
-    throw new Error(data?.message || `Request failed (${res.status})`);
+  const responseText = await response.text();
+
+  let data = null;
+
+  try {
+    data = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    data = { message: responseText };
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 && safePath.startsWith("/admin")) {
+      localStorage.removeItem("tie_auth");
+    }
+
+    throw new Error(data?.message || `Request failed (${response.status})`);
+  }
+
   return data;
 }
 
 export async function apiFetch(path) {
-  const safePath = path.startsWith("/") ? path : `/${path}`;
-  const token = getToken(safePath);
-
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE}${safePath}`, {
-    headers,
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let msg = `Request failed (${res.status})`;
-    try {
-      msg = JSON.parse(text)?.message || msg;
-    } catch {}
-    throw new Error(msg);
-  }
-  return res.json();
+  return api(path, { method: "GET" });
 }
 
 export async function fileData(file, maxWidth = 1600, quality = 0.8) {
   if (!file) throw new Error("No file provided.");
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+
     reader.onerror = () => reject(new Error("Failed to read file."));
-    reader.onload = (e) => {
+
+    reader.onload = (event) => {
       const img = new Image();
+
       img.onerror = () => reject(new Error("Failed to load image."));
+
       img.onload = () => {
         try {
           let { width, height } = img;
+
           if (width > maxWidth) {
             height = Math.round((height * maxWidth) / width);
             width = maxWidth;
           }
+
           const canvas = document.createElement("canvas");
           canvas.width = width;
           canvas.height = height;
+
           const ctx = canvas.getContext("2d");
+
+          if (!ctx) throw new Error("Canvas is not supported.");
+
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
+
           resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
-        } catch (err) {
-          reject(err);
+        } catch (error) {
+          reject(error);
         }
       };
-      img.src = e.target.result;
+
+      img.src = event.target.result;
     };
+
     reader.readAsDataURL(file);
   });
 }
