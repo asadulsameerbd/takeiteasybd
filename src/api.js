@@ -11,7 +11,11 @@ export { API_BASE };
 // Admin ও Customer token আলাদা রাখা হয়েছে
 function getToken(path = "") {
   try {
-    const isAdminRoute = path.startsWith("/admin");
+    // ✅ Admin রুটগুলো চেক করুন (uploads/image, uploads/images সহ)
+    const isAdminRoute =
+      path.startsWith("/admin") ||
+      path.startsWith("/uploads/image") ||
+      path.startsWith("/uploads/images");
 
     if (isAdminRoute) {
       const raw = localStorage.getItem("tie_auth");
