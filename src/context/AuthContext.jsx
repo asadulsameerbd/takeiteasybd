@@ -1,3 +1,5 @@
+// client/src/context/AuthContext.jsx
+
 import React, {
   createContext,
   useContext,
@@ -107,6 +109,37 @@ export function AuthProvider({ children }) {
       console.error("Customer token storage error:", error);
     }
   }, [customer]);
+
+  // ==========================================================
+  // ✅ Cross-tab Sync (Storage Event Listener)
+  // একই ব্রাউজারের অন্য ট্যাবে login/logout হলে এই ট্যাবেও সিঙ্ক হবে
+  // ==========================================================
+
+  useEffect(() => {
+    const handleStorage = (e) => {
+      // Admin token change
+      if (e.key === "tie_auth") {
+        const newToken = e.newValue
+          ? JSON.parse(e.newValue)?.adminToken || ""
+          : "";
+        setAdminToken(newToken);
+      }
+
+      // Customer change (login/logout/profile update)
+      if (e.key === "tie_customer") {
+        const newCustomer = e.newValue ? JSON.parse(e.newValue) : null;
+        setCustomer(normalizeCustomer(newCustomer));
+      }
+
+      // Customer token clear হলে (logout)
+      if (e.key === "tie_token" && !e.newValue) {
+        setCustomer(null);
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   // ==========================================================
   // Customer Login

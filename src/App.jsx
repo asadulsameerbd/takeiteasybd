@@ -13,6 +13,8 @@ import {
   Route,
   Routes,
   useParams,
+  useNavigate,
+  useSearchParams,
 } from "react-router-dom";
 import {
   ArrowRight,
@@ -55,7 +57,7 @@ import MetaPixel from "./MetaPixel";
 import pixel from "./lib/pixel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
-import { api, apiFetch, fileData } from "./api";
+import { api, apiFetch, fileData, API_BASE } from "./api";
 import { useAuth } from "./context/AuthContext";
 import { broadcastOrderChange, orderChannel } from "./lib/orderChannel";
 import logo from "./assets/logo.jpeg";
@@ -666,11 +668,21 @@ function Heading({ tag, title, desc }) {
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
+  const navigate = useNavigate(); // ✅ নতুন
+  const [searchQuery, setSearchQuery] = useState(""); // ✅ নতুন
   const [products, setProducts] = useState([]);
   const [banners, setBanners] = useState([]);
   const [slide, setSlide] = useState(0);
   const [visible, setVisible] = useState(8);
   const [loading, setLoading] = useState(true);
+
+  // ✅ নতুন ফাংশন — `useEffect` গুলোর আগে যোগ করুন
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
+    }
+  };
 
   const [bannerImageLoaded, setBannerImageLoaded] = useState(false);
   const [bannerFading, setBannerFading] = useState(false);
@@ -859,6 +871,34 @@ function Home() {
         </div>
       </section>
 
+      {/* ✅ নতুন সার্চ সেকশন */}
+      <section className="wrap" style={{ padding: "24px 0" }}>
+        <form onSubmit={handleSearch} className="search-container">
+          <div className="search-box">
+            <svg
+              className="search-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search for products, categories..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="search-input"
+            />
+            <button type="submit" className="search-button">
+              Search
+            </button>
+          </div>
+        </form>
+      </section>
+
       <section className="wrap section">
         <div className="sectitle">
           <div>
@@ -900,11 +940,19 @@ function Home() {
 /* ============================================================ */
 function Products() {
   const { add } = useContext(C);
+  const [searchParams] = useSearchParams(); // ✅ নতুন
+  const initialQuery = searchParams.get("q") || ""; // ✅ নতুন
 
   const [products, setProducts] = useState([]);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery); // ✅ initialQuery দিয়ে শুরু
   const [visible, setVisible] = useState(12);
   const [loading, setLoading] = useState(true);
+
+  // ✅ URL-এ q পরিবর্তন হলে state update
+  useEffect(() => {
+    const urlQ = searchParams.get("q") || "";
+    setQ(urlQ);
+  }, [searchParams]);
 
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [minPrice, setMinPrice] = useState(0);
@@ -2232,6 +2280,7 @@ function Checkout() {
   });
 
   const [selectedZone, setSelectedZone] = useState("dhaka");
+  const [manualZone, setManualZone] = useState(false); // ✅ নতুন
   const [delivery, setDelivery] = useState(0);
 
   const [uploading, setUploading] = useState(false);
@@ -2252,10 +2301,13 @@ function Checkout() {
 
   const detectedZone = detectDeliveryZone(f.city, f.address);
 
+  // ✅ manualZone true না হলে অটো-ডিটেক্ট হবে
   useEffect(() => {
-    setSelectedZone(detectedZone);
+    if (!manualZone) {
+      setSelectedZone(detectedZone);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectedZone]);
+  }, [detectedZone, manualZone]);
 
   const productZoneCharges = cart
     .map((item) => {
@@ -2523,7 +2575,10 @@ function Checkout() {
           <button
             key={z.v}
             type="button"
-            onClick={() => setSelectedZone(z.v)}
+            onClick={() => {
+              setSelectedZone(z.v);
+              setManualZone(true); // ✅ নতুন লাইন
+            }}
             className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-3 text-sm font-bold transition ${
               active
                 ? "border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
@@ -6391,19 +6446,25 @@ function AdminReports() {
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const buildQuery = () => {
+  // ✅ FIXED: প্যারামিটার গ্রহণ করে stale state এড়ানো
+  const buildQuery = (customStart, customEnd, customStatus) => {
     const params = new URLSearchParams();
-    if (startDate) params.set("startDate", startDate);
-    if (endDate) params.set("endDate", endDate);
-    if (statusFilter !== "all") params.set("status", statusFilter);
+    const s = customStart !== undefined ? customStart : startDate;
+    const e = customEnd !== undefined ? customEnd : endDate;
+    const st = customStatus !== undefined ? customStatus : statusFilter;
+
+    if (s) params.set("startDate", s);
+    if (e) params.set("endDate", e);
+    if (st !== "all") params.set("status", st);
     return params.toString();
   };
 
-  const fetchReport = async () => {
+  // ✅ FIXED: প্যারামিটার গ্রহণ
+  const fetchReport = async (customStart, customEnd, customStatus) => {
     setLoading(true);
     setError("");
     try {
-      const qs = buildQuery();
+      const qs = buildQuery(customStart, customEnd, customStatus);
       const r = await api(`/admin/reports${qs ? "?" + qs : ""}`);
       setData(r);
     } catch (e) {
@@ -6422,9 +6483,7 @@ function AdminReports() {
     setExporting(true);
     try {
       const qs = buildQuery();
-      const baseUrl =
-        import.meta.env.VITE_API_URL || "https://takeiteasybd.vercel.app/api";
-      const url = `${baseUrl}/admin/reports/export${qs ? "?" + qs : ""}`;
+      const url = `${API_BASE}/admin/reports/export${qs ? "?" + qs : ""}`; // ✅ API_BASE
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${adminToken}` },
@@ -6445,16 +6504,20 @@ function AdminReports() {
     }
   };
 
+  // ✅ FIXED: setTimeout বাদ দিয়ে সরাসরি প্যারামিটার পাস
   const quickRange = (days) => {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - days);
 
     const fmt = (d) => d.toISOString().slice(0, 10);
-    setStartDate(fmt(start));
-    setEndDate(fmt(end));
+    const s = fmt(start);
+    const e = fmt(end);
 
-    setTimeout(fetchReport, 100);
+    setStartDate(s);
+    setEndDate(e);
+
+    fetchReport(s, e, statusFilter); // ✅ সরাসরি প্যারামিটার
   };
 
   const s = data?.summary || {};
@@ -6629,7 +6692,7 @@ function AdminReports() {
                 if (q.days === null) {
                   setStartDate("");
                   setEndDate("");
-                  setTimeout(fetchReport, 100);
+                  fetchReport("", "", statusFilter); // ✅ সরাসরি প্যারামিটার
                 } else {
                   quickRange(q.days);
                 }

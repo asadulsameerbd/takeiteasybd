@@ -1,9 +1,14 @@
+// client/src/api.js
+
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
   "https://take-it-easy-bd-server.vercel.app/api"
 ).replace(/\/+$/, "");
 
-// Admin ও Customer token আলাদা রাখা হয়েছে
+// ✅ API_BASE এক্সপোর্ট করা হলো (CSV Export-এর জন্য)
+export { API_BASE };
+
+// Admin ও Customer token আলাদা রাখা হয়েছে
 function getToken(path = "") {
   try {
     const isAdminRoute = path.startsWith("/admin");
@@ -51,15 +56,27 @@ export async function api(path, options = {}) {
 
   let response;
 
+  // ✅ FIXED: Timeout যোগ করা হলো (15 সেকেন্ড)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
   try {
     response = await fetch(`${API_BASE}${safePath}`, {
       method,
       headers,
       body: finalBody,
       cache: "no-store",
+      signal: controller.signal, // ✅ Abort signal পাস করা হলো
     });
-  } catch {
+  } catch (error) {
+    // ✅ Timeout / Abort error আলাদাভাবে হ্যান্ডেল
+    if (error.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
     throw new Error("Server connection failed. Please try again.");
+  } finally {
+    // ✅ টাইমআউট ক্লিয়ার করা হলো (সফল বা ব্যর্থ যাই হোক)
+    clearTimeout(timeoutId);
   }
 
   const responseText = await response.text();
