@@ -53,6 +53,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import "./styles-admin-update.css";
 import MetaPixel from "./MetaPixel";
 import pixel from "./lib/pixel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -668,15 +669,14 @@ function Heading({ tag, title, desc }) {
 /* ============================================================ */
 function Home() {
   const { add } = useContext(C);
-  const navigate = useNavigate(); // ✅ নতুন
-  const [searchQuery, setSearchQuery] = useState(""); // ✅ নতুন
+  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState("");
   const [products, setProducts] = useState([]);
   const [banners, setBanners] = useState([]);
+  const [sections, setSections] = useState([]); // ✅ নতুন: ডাইনামিক সেকশনের জন্য
   const [slide, setSlide] = useState(0);
-  const [visible, setVisible] = useState(8);
   const [loading, setLoading] = useState(true);
 
-  // ✅ নতুন ফাংশন — `useEffect` গুলোর আগে যোগ করুন
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -687,7 +687,6 @@ function Home() {
   const [bannerImageLoaded, setBannerImageLoaded] = useState(false);
   const [bannerFading, setBannerFading] = useState(false);
 
-  const sentinel = React.useRef(null);
   const bannerTimeoutRef = React.useRef(null);
 
   useEffect(() => {
@@ -695,10 +694,13 @@ function Home() {
     Promise.all([
       api("/products", { auth: false }),
       api("/banners", { auth: false }),
+      // ✅ নতুন: হোমপেজ সেকশন API কল
+      api("/homepage/sections", { auth: false }).catch(() => []),
     ])
-      .then(([p, b]) => {
+      .then(([p, b, s]) => {
         setProducts(Array.isArray(p) ? p : []);
         setBanners(Array.isArray(b) ? b : []);
+        setSections(Array.isArray(s) ? s : []);
       })
       .catch((e) => msg(e.message, "error"))
       .finally(() => setLoading(false));
@@ -713,34 +715,6 @@ function Home() {
 
     return () => clearInterval(id);
   }, [banners.length, slide]);
-
-  /**
-   * ✅ FIXED: Home-এ শুধু in-stock product দেখাবে।
-   * Out-of-stock product hide হবে Home থেকে।
-   */
-  const inStockProducts = useMemo(
-    () => products.filter((p) => !isProductOutOfStock(p)),
-    [products],
-  );
-
-  useEffect(() => {
-    const el = sentinel.current;
-
-    if (!el || visible >= inStockProducts.length) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisible((v) => Math.min(v + 8, inStockProducts.length));
-        }
-      },
-      { rootMargin: "250px" },
-    );
-
-    observer.observe(el);
-
-    return () => observer.disconnect();
-  }, [visible, inStockProducts.length]);
 
   function goToSlide(nextIndex) {
     if (nextIndex === slide) return;
@@ -872,7 +846,10 @@ function Home() {
       </section>
 
       {/* ✅ নতুন সার্চ সেকশন */}
-      <section className="wrap" style={{ padding: "24px 0" }}>
+      <section
+        className="wrap tie-home-search"
+        style={{ padding: "14px 0 6px" }}
+      >
         <form onSubmit={handleSearch} className="search-container">
           <div className="search-box">
             <svg
@@ -899,38 +876,52 @@ function Home() {
         </form>
       </section>
 
-      <section className="wrap section">
-        <div className="sectitle">
-          <div>
-            <span className="eyebrow">THE GOOD STUFF</span>
-            <h2>Your everyday favourites</h2>
-          </div>
-
-          <Link to="/products">Shop all products ↗</Link>
-        </div>
-
-        {loading ? (
+      {/* ✅ নতুন: ডাইনামিক হোমপেজ সেকশন রেন্ডারিং */}
+      {loading ? (
+        <section className="wrap section">
           <Loader text="Fetching the good stuff" />
-        ) : inStockProducts.length ? (
-          <>
-            <div className="grid">
-              {inStockProducts.slice(0, visible).map((p) => (
-                <Card key={p._id} p={p} add={add} />
-              ))}
-            </div>
-
-            <div ref={sentinel} className="scrollsentinel" aria-hidden="true" />
-
-            {visible < inStockProducts.length && (
-              <p className="loadmore">Loading more pieces…</p>
-            )}
-          </>
-        ) : (
+        </section>
+      ) : sections.length === 0 ? (
+        <section className="wrap section">
           <div className="empty">
-            No products are currently in stock. Please check back soon.
+            No homepage sections configured. Please add from admin panel.
           </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        sections.map((sec) => {
+          // স্টক আউট প্রোডাক্ট ফিল্টার করা
+          const secProducts = sec.products.filter(
+            (p) => !isProductOutOfStock(p),
+          );
+          if (!secProducts.length) return null; // কোনো স্টক থাকা প্রোডাক্ট না থাকলে সেকশন দেখাবে না
+
+          return (
+            <section key={sec._id} className="wrap section">
+              <div className="sectitle">
+                <div>
+                  {sec.eyebrow && (
+                    <span className="eyebrow">{sec.eyebrow}</span>
+                  )}
+                  <h2>{sec.title || sec.key}</h2>
+                  {sec.subtitle && (
+                    <p className="mt-2 text-sm text-neutral-500">
+                      {sec.subtitle}
+                    </p>
+                  )}
+                </div>
+
+                <Link to="/products">Shop all products ↗</Link>
+              </div>
+
+              <div className="grid">
+                {secProducts.map((p) => (
+                  <Card key={p._id} p={p} add={add} />
+                ))}
+              </div>
+            </section>
+          );
+        })
+      )}
     </main>
   );
 }
@@ -938,444 +929,443 @@ function Home() {
 /* ============================================================ */
 /* Products Page                                                */
 /* ============================================================ */
-function Products() {
+function Product() {
+  const { slug } = useParams();
   const { add } = useContext(C);
-  const [searchParams] = useSearchParams(); // ✅ নতুন
-  const initialQuery = searchParams.get("q") || ""; // ✅ নতুন
+  const { customer } = useAuth();
 
-  const [products, setProducts] = useState([]);
-  const [q, setQ] = useState(initialQuery); // ✅ initialQuery দিয়ে শুরু
-  const [visible, setVisible] = useState(12);
+  const [data, setData] = useState(null);
+  const [size, setSize] = useState("");
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // ✅ URL-এ q পরিবর্তন হলে state update
-  useEffect(() => {
-    const urlQ = searchParams.get("q") || "";
-    setQ(urlQ);
-  }, [searchParams]);
-
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [minPrice, setMinPrice] = useState(0);
-  const [maxPrice, setMaxPrice] = useState(5000);
-  const [sortBy, setSortBy] = useState("featured");
-  const [showFilters, setShowFilters] = useState(false);
+  const trackedProductIdRef = useRef(null);
 
   useEffect(() => {
-    let live = true;
     setLoading(true);
+    api("/products/" + slug, { auth: false })
+      .then((d) => {
+        setData(d);
+        const sizes = d.product.sizes || [];
+        const firstAvailable = sizes.find((s) => isSizeAvailable(d.product, s));
+        setSize(firstAvailable || sizes[0] || "");
+        setActiveImage(0);
 
-    api(`/products${q.trim() ? "?q=" + encodeURIComponent(q.trim()) : ""}`, {
-      auth: false,
-    })
-      .then((data) => {
-        if (live) {
-          setProducts(Array.isArray(data) ? data : []);
-          setVisible(12);
+        // ✅ নতুন: কাস্টমারের নিজের রিভিউ থাকলে ফর্মে সেটি লোড হবে (এডিটের জন্য)
+        const myReview = d.reviews.find(
+          (r) =>
+            r.user === customer?.user?.id || r.user === customer?.user?._id,
+        );
+        if (myReview) {
+          setRating(myReview.rating);
+          setComment(myReview.comment);
+        } else {
+          setRating(5);
+          setComment("");
         }
       })
-      .catch((e) => {
-        if (live) msg(e.message, "error");
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-
-    return () => {
-      live = false;
-    };
-  }, [q]);
+      .catch((e) => msg(e.message, "error"))
+      .finally(() => setLoading(false));
+  }, [slug, customer]);
 
   useEffect(() => {
-    if (!q.trim()) return;
-    const t = setTimeout(() => {
-      pixel.search(q);
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [q]);
+    if (!data?.product) return;
+    if (trackedProductIdRef.current === data.product._id) return;
+    trackedProductIdRef.current = data.product._id;
 
-  const lastCategoryRef = useRef(null);
-  useEffect(() => {
-    if (selectedCategory === "All") return;
-    if (lastCategoryRef.current === selectedCategory) return;
-    lastCategoryRef.current = selectedCategory;
-    pixel.viewCategory(selectedCategory);
-  }, [selectedCategory]);
+    const id = setTimeout(() => {
+      pixel.viewContent(data.product);
+    }, 300);
 
-  const categories = [
-    "All",
-    ...new Set(
-      products
-        .map((p) => p.category)
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-    ),
-  ];
+    return () => clearTimeout(id);
+  }, [data?.product?._id]);
 
-  const priceCeiling = Math.max(
-    500,
-    ...products.map((p) => Number(p.price) || 0),
-  );
-
-  /**
-   * ✅ Sorted product list:
-   *   1. Filter (hidden skip, category/price match)
-   *   2. Stock-out সবসময় last
-   *   3. Stock same হলে user-selected sort apply
-   */
-  const filteredProducts = useMemo(() => {
-    return products
-      .filter((p) => {
-        if (isProductHidden(p)) return false;
-
-        const price = Number(p.price) || 0;
-        const categoryMatch =
-          selectedCategory === "All" || p.category === selectedCategory;
-        const priceMatch = price >= minPrice && price <= maxPrice;
-        return categoryMatch && priceMatch;
-      })
-      .sort((a, b) => {
-        const aOut = isProductOutOfStock(a);
-        const bOut = isProductOutOfStock(b);
-        if (aOut !== bOut) return aOut ? 1 : -1;
-
-        switch (sortBy) {
-          case "price-low":
-            return Number(a.price || 0) - Number(b.price || 0);
-          case "price-high":
-            return Number(b.price || 0) - Number(a.price || 0);
-          case "name":
-            return (a.title || "").localeCompare(b.title || "");
-          default:
-            return 0;
-        }
-      });
-  }, [products, selectedCategory, minPrice, maxPrice, sortBy]);
-
-  // ✅ Split for sectioned rendering
-  const inStockFiltered = useMemo(
-    () => filteredProducts.filter((p) => !isProductOutOfStock(p)),
-    [filteredProducts],
-  );
-
-  const outOfStockFiltered = useMemo(
-    () => filteredProducts.filter((p) => isProductOutOfStock(p)),
-    [filteredProducts],
-  );
-
-  /**
-   * ✅ How many visible in-stock items vs how many stock-out
-   * (stock-out সবসময় in-stock শেষ হওয়ার পরে visible হবে)
-   */
-  const visibleInStock = inStockFiltered.slice(0, visible);
-  const remainingSlots = Math.max(0, visible - visibleInStock.length);
-  const visibleOutOfStock = outOfStockFiltered.slice(0, remainingSlots);
-
-  function resetFilters() {
-    setSelectedCategory("All");
-    setMinPrice(0);
-    setMaxPrice(priceCeiling);
-    setSortBy("featured");
-    setQ("");
-    setVisible(12);
+  if (loading || !data) {
+    return (
+      <main className="wrap page">
+        <Loader text="Loading product" />
+      </main>
+    );
   }
 
-  const activeFilters =
-    selectedCategory !== "All" ||
-    minPrice > 0 ||
-    maxPrice < priceCeiling ||
-    sortBy !== "featured" ||
-    q.trim() !== "";
+  const p = data.product;
+  const isOutOfStock = isProductOutOfStock(p);
+  const discount = getDiscountInfo(p);
+
+  const images = p.images?.length
+    ? p.images
+    : ["https://placehold.co/800x900?text=Take+It+Easy"];
+
+  const selectedImage = Math.min(activeImage, images.length - 1);
+
+  const deliveryCharges = normalizeDeliveryCharges(p.deliveryCharges);
+  const hasCustomDelivery =
+    deliveryCharges.dhaka > 0 || deliveryCharges.outside > 0;
+
+  // ✅ নতুন: কাস্টমারের নিজের রিভিউটি খুঁজে বের করা
+  const myReview = data.reviews.find(
+    (r) => r.user === customer?.user?.id || r.user === customer?.user?._id,
+  );
+
+  async function review(e) {
+    e.preventDefault();
+
+    try {
+      await api(`/products/${p._id}/reviews`, {
+        method: "POST",
+        body: JSON.stringify({ rating, comment }),
+      });
+
+      // ✅ রিভিউ সেভ হওয়ার পর ডাটা রিফ্রেশ করা
+      const updatedData = await api("/products/" + slug, { auth: false });
+      setData(updatedData);
+
+      msg(myReview ? "Review updated!" : "Review saved.");
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
 
   return (
-    <main
-      className="min-h-screen w-full text-neutral-900"
-      style={{ backgroundColor: "#faf9f6" }}
-    >
-      <div className="mx-auto w-full max-w-[1380px] px-4 py-6 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
-        <div className="mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:flex-row sm:items-end">
-          <div>
-            <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.22em] text-orange-600 sm:text-xs">
-              THE WHOLE COLLECTION
-            </p>
-            <h1 className="text-3xl space font-black tracking-tight sm:text-4xl lg:text-5xl">
-              Shop All.
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-500 sm:text-base">
-              Find your favourites, your way.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-neutral-500">
-            <span className="font-bold text-neutral-900">
-              {loading ? "—" : filteredProducts.length}
-            </span>
-            {filteredProducts.length === 1 ? "product" : "products"} found
-          </div>
-        </div>
+    <main className="wrap page mx-auto w-full max-w-[1380px] px-4 py-5 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+      <p className="crumb mb-5 break-words text-sm text-neutral-500 sm:mb-8">
+        <Link to="/" className="transition hover:text-orange-600">
+          Home
+        </Link>{" "}
+        /{" "}
+        <Link to="/products" className="transition hover:text-orange-600">
+          Shop
+        </Link>{" "}
+        / <span className="text-neutral-800">{p.title}</span>
+      </p>
 
-        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:p-4">
-          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-3 rounded-xl bg-neutral-50 px-4 transition focus-within:ring-2 focus-within:ring-orange-400">
-            <Search size={19} className="shrink-0 text-neutral-400" />
-            <input
-              type="search"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setVisible(12);
-              }}
-              placeholder="Search products..."
-              className="w-full min-w-0 bg-transparent py-3 text-sm outline-none placeholder:text-neutral-400"
-            />
-            {q && (
-              <button
-                type="button"
-                onClick={() => setQ("")}
-                className="shrink-0 text-xs font-bold text-neutral-500 hover:text-orange-600"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+      <div className="flex w-full flex-col items-start gap-7 sm:gap-9 xl:grid xl:grid-cols-2 xl:gap-12">
+        <div className="w-full min-w-0">
+          <div className="w-full">
+            <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[#f5f3ef] sm:rounded-2xl">
+              <img
+                key={images[selectedImage]}
+                src={images[selectedImage]}
+                alt={p.title}
+                className={`h-full w-full object-contain transition-opacity duration-200 ${
+                  isOutOfStock ? "opacity-70" : ""
+                }`}
+              />
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-1 items-center gap-2 sm:flex-none">
-              <label
-                htmlFor="sort"
-                className="shrink-0 text-xs font-semibold text-neutral-500"
-              >
-                Sort:
-              </label>
-              <select
-                id="sort"
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value);
-                  setVisible(12);
-                }}
-                className="min-h-12 flex-1 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-medium outline-none focus:border-orange-400 sm:w-40"
-              >
-                <option value="featured">Featured</option>
-                <option value="price-low">Price: Low to High</option>
-                <option value="price-high">Price: High to Low</option>
-                <option value="name">Name: A to Z</option>
-              </select>
-            </div>
+              {images.length > 1 && (
+                <span className="absolute bottom-3 right-3 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
+                  {selectedImage + 1} / {images.length}
+                </span>
+              )}
 
-            <button
-              type="button"
-              onClick={() => setShowFilters(true)}
-              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-neutral-900 px-5 text-sm font-bold text-white transition hover:bg-neutral-800 sm:flex-none lg:hidden"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                />
-              </svg>
-              Filters
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-start gap-6 lg:flex-row lg:gap-8">
-          <aside className="hidden w-[260px] shrink-0 lg:sticky lg:top-24 lg:block">
-            <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-lg shadow-neutral-200/40">
-              <div className="bg-neutral-950 px-5 py-4 text-white">
-                <h3 className="text-sm font-extrabold uppercase tracking-wider flex items-center gap-2">
-                  <svg
-                    className="h-4 w-4 text-orange-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                    />
-                  </svg>
-                  Filters
-                </h3>
-              </div>
-              <div className="p-5">
-                <FilterBox
-                  categories={categories}
-                  selectedCategory={selectedCategory}
-                  setSelectedCategory={setSelectedCategory}
-                  minPrice={minPrice}
-                  maxPrice={maxPrice}
-                  setMinPrice={setMinPrice}
-                  setMaxPrice={setMaxPrice}
-                  priceCeiling={priceCeiling}
-                  resetFilters={resetFilters}
-                  setVisible={setVisible}
-                />
-              </div>
-            </div>
-          </aside>
-
-          <div className="min-w-0 w-full flex-1">
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-neutral-500">
-                {loading ? (
-                  "Loading products..."
-                ) : (
-                  <>
-                    Showing{" "}
-                    <span className="font-bold text-neutral-900">
-                      {Math.min(
-                        visible,
-                        visibleInStock.length + visibleOutOfStock.length,
-                      )}
-                    </span>{" "}
-                    of {filteredProducts.length} products
-                  </>
-                )}
-              </p>
-              {activeFilters && (
-                <button
-                  onClick={resetFilters}
-                  className="text-xs font-bold text-orange-600 hover:text-orange-700"
-                >
-                  Clear filters ×
-                </button>
+              {isOutOfStock && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/25 backdrop-blur-[1px]">
+                  <span className="rotate-[-8deg] rounded-lg bg-stone-900 px-5 py-2.5 text-base font-black uppercase tracking-widest text-white shadow-xl sm:text-lg">
+                    Stock Out
+                  </span>
+                </div>
               )}
             </div>
 
-            {loading ? (
-              <Loader text="Fetching products" />
-            ) : filteredProducts.length > 0 ? (
-              <>
-                {/* ✅ In-stock products first */}
-                {visibleInStock.length > 0 && (
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 sm:gap-5">
-                    {visibleInStock.map((p) => (
-                      <div key={p._id} className="min-w-0">
-                        <Card p={p} add={add} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* ✅ Stock-out products — labeled section, সবসময় last */}
-                {visibleOutOfStock.length > 0 && (
-                  <div className="mt-10">
-                    <div className="mb-4 flex items-center gap-3">
-                      <span className="h-px flex-1 bg-neutral-200" />
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-stone-500">
-                        <XCircle size={12} /> Stock Out (
-                        {outOfStockFiltered.length})
-                      </span>
-                      <span className="h-px flex-1 bg-neutral-200" />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 sm:gap-5">
-                      {visibleOutOfStock.map((p) => (
-                        <div key={p._id} className="min-w-0">
-                          <Card p={p} add={add} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {visible < filteredProducts.length && (
-                  <div className="mt-10 flex justify-center sm:mt-14">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setVisible((v) =>
-                          Math.min(v + 12, filteredProducts.length),
-                        )
-                      }
-                      className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border border-neutral-300 bg-white px-8 py-3 text-sm font-bold transition hover:border-orange-500 hover:bg-orange-500 hover:text-white"
-                    >
-                      Load More Products
-                      <span aria-hidden="true">↓</span>
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 bg-white px-5 py-12 text-center shadow-sm">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-orange-50 text-orange-500">
-                  <Search size={32} />
-                </div>
-                <h3 className="mt-6 text-xl font-extrabold">
-                  No products found
-                </h3>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
-                  {products.length === 0
-                    ? "There are currently no products available."
-                    : "Try changing your search, category or price range to find products."}
-                </p>
-                {activeFilters && (
-                  <button
-                    onClick={resetFilters}
-                    className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white transition hover:bg-orange-600"
-                  >
-                    Clear all filters
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="mt-3 flex gap-2.5 overflow-x-auto pb-2 sm:mt-4 sm:gap-3">
+              {images.map((src, i) => (
+                <button
+                  type="button"
+                  key={`${src}-${i}`}
+                  onClick={() => setActiveImage(i)}
+                  aria-label={`View product image ${i + 1}`}
+                  aria-pressed={selectedImage === i}
+                  className={`relative h-[76px] w-[64px] shrink-0 overflow-hidden rounded-lg border-2 bg-[#f5f3ef] transition-all duration-200 sm:h-24 sm:w-20 ${
+                    selectedImage === i
+                      ? "border-orange-500 opacity-100 ring-1 ring-orange-500"
+                      : "border-transparent opacity-70 hover:border-neutral-300 hover:opacity-100"
+                  }`}
+                >
+                  <img
+                    src={src}
+                    alt={`${p.title} thumbnail ${i + 1}`}
+                    loading="lazy"
+                    className="h-full w-full object-contain"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {showFilters && (
-          <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm lg:hidden transition-opacity">
-            <div className="h-full w-full max-w-[320px] overflow-y-auto bg-white p-5 shadow-2xl animate-in slide-in-from-right duration-300">
-              <div className="mb-6 flex items-center justify-between border-b border-neutral-100 pb-4">
-                <h2 className="text-lg font-black uppercase tracking-wide">
-                  Filters
-                </h2>
-                <button
-                  onClick={() => setShowFilters(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 transition hover:bg-neutral-200 hover:text-black"
-                >
-                  <X size={18} />
-                </button>
-              </div>
+        <div className="w-full min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="eyebrow">{p.category}</span>
 
-              <FilterBox
-                categories={categories}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                minPrice={minPrice}
-                maxPrice={maxPrice}
-                setMinPrice={setMinPrice}
-                setMaxPrice={setMaxPrice}
-                priceCeiling={priceCeiling}
-                resetFilters={resetFilters}
-                setVisible={setVisible}
-              />
+            {isOutOfStock && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-red-700">
+                <XCircle size={11} /> Stock Out
+              </span>
+            )}
+          </div>
 
-              <div className="mt-8 pt-4 border-t border-neutral-100">
-                <button
-                  onClick={() => setShowFilters(false)}
-                  className="w-full rounded-xl bg-orange-500 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-orange-600 active:scale-95"
-                >
-                  Show {filteredProducts.length} Results
-                </button>
+          <h1 className="mt-2 break-words text-2xl font-semibold leading-tight text-neutral-900 sm:text-3xl xl:text-4xl">
+            {p.title}
+          </h1>
+
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h2 className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold text-neutral-900 sm:text-3xl">
+              {money(p.price)}
+
+              {discount.percent > 0 && (
+                <del className="text-lg font-normal text-neutral-400 sm:text-xl">
+                  {money(discount.original)}
+                </del>
+              )}
+            </h2>
+
+            {discount.percent > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-orange-700">
+                <Percent size={11} /> {discount.percent}% off
+              </span>
+            )}
+          </div>
+
+          {hasCustomDelivery && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {deliveryCharges.dhaka > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
+                  <Truck size={12} /> ঢাকায় ৳{deliveryCharges.dhaka}
+                </span>
+              )}
+              {deliveryCharges.outside > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">
+                  <Truck size={12} /> ঢাকার বাইরে ৳{deliveryCharges.outside}
+                </span>
+              )}
+            </div>
+          )}
+
+          <p className="description mt-4 whitespace-pre-line break-words text-sm leading-7 text-neutral-600 sm:text-base">
+            {p.description}
+          </p>
+
+          {p.material && (
+            <p className="mt-4 text-sm text-neutral-700 sm:text-base">
+              <b>Material:</b> {p.material}
+            </p>
+          )}
+
+          {p.gsm && (
+            <p className="mt-2 text-sm text-neutral-700 sm:text-base">
+              <b>Weight:</b> {p.gsm}
+            </p>
+          )}
+
+          {p.sizes?.length > 0 && (
+            <div className="sizes mt-6">
+              <b className="mb-3 block text-sm text-neutral-900 sm:text-base">
+                Choose size
+              </b>
+
+              <div className="flex flex-wrap gap-2">
+                {p.sizes.map((s) => {
+                  const available = getSizeStock(p, s);
+                  const sizeOut = available <= 0;
+
+                  return (
+                    <button
+                      type="button"
+                      key={s}
+                      disabled={sizeOut || isOutOfStock}
+                      title={
+                        sizeOut
+                          ? `${s} — Stock out`
+                          : `${s} — ${available} in stock`
+                      }
+                      aria-pressed={s === size}
+                      onClick={() => {
+                        if (sizeOut || isOutOfStock) return;
+                        setSize(s);
+                      }}
+                      className={`min-w-12 rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+                        s === size && !sizeOut
+                          ? "selected border-neutral-900 bg-neutral-900 text-white"
+                          : "border-neutral-300 bg-white text-neutral-800 hover:border-neutral-900"
+                      } ${
+                        sizeOut || isOutOfStock
+                          ? "cursor-not-allowed opacity-40 line-through"
+                          : ""
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="mt-16 border-t border-neutral-200 pt-8 text-center">
-          <p className="text-sm text-neutral-500">
-            Good style. No extra effort.{" "}
-            <span className="font-extrabold text-neutral-900">
-              Take It Easy.
-            </span>
-          </p>
+          <div className="buyrow mt-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:mt-8">
+            {isOutOfStock ? (
+              <>
+                <button
+                  type="button"
+                  disabled
+                  className="flex min-h-12 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 px-4 py-3 text-sm font-bold text-neutral-400"
+                >
+                  <XCircle size={16} />
+                  <span>স্টক শেষ</span>
+                </button>
+
+                <Link
+                  to="/products"
+                  className="btn dark flex min-w-0 items-center justify-center gap-2"
+                >
+                  <span>অন্য পণ্য দেখুন</span>
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </Link>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn orange flex min-w-0 items-center justify-center gap-2"
+                  onClick={() => {
+                    if (p.sizes?.length && !size) {
+                      return msg("Please select a size.", "warning");
+                    }
+
+                    if (p.sizes?.length && !isSizeAvailable(p, size)) {
+                      return msg(`${size} সাইজ স্টক আউট।`, "warning");
+                    }
+
+                    add(p, size);
+                  }}
+                >
+                  <span className="hind text-sm">কার্টে যোগ করুন</span>
+                  <ShoppingBag className="h-4 w-4 shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  className="btn dark flex min-w-0 items-center justify-center gap-2"
+                  onClick={() => {
+                    if (p.sizes?.length && !size) {
+                      return msg("Please select a size.", "warning");
+                    }
+
+                    if (p.sizes?.length && !isSizeAvailable(p, size)) {
+                      return msg(`${size} সাইজ স্টক আউট।`, "warning");
+                    }
+
+                    pixel.addToCart(p, 1, size);
+
+                    add(p, size, false);
+                    location.href = "/checkout";
+                  }}
+                >
+                  <span>Buy now</span>
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </button>
+              </>
+            )}
+          </div>
+
+          <section className="reviews mt-9 border-t border-neutral-200 pt-6 sm:mt-12 sm:pt-8">
+            <h2 className="text-xl font-semibold text-neutral-900 sm:text-2xl">
+              Customer reviews ({data.reviews.length})
+            </h2>
+
+            <div className="mt-5 space-y-4">
+              {data.reviews.map((r) => {
+                // ✅ নিজের রিভিউ কিনা চেক করা
+                const isOwnReview =
+                  r.user === customer?.user?.id ||
+                  r.user === customer?.user?._id;
+
+                return (
+                  <article
+                    className={`review rounded-xl border p-4 sm:p-5 ${
+                      isOwnReview
+                        ? "border-orange-300 bg-orange-50/50"
+                        : "border-neutral-200"
+                    }`}
+                    key={r._id}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <b className="break-words text-sm text-neutral-900 sm:text-base">
+                        {r.userName}
+                        {isOwnReview && (
+                          <span className="ml-2 rounded bg-orange-200 px-1.5 py-0.5 text-[10px] font-bold uppercase text-orange-800">
+                            Your review
+                          </span>
+                        )}
+                      </b>
+
+                      <span
+                        className="shrink-0 text-sm tracking-wide text-amber-500"
+                        aria-label={`${r.rating} out of 5 stars`}
+                      >
+                        {"★".repeat(r.rating)}
+                        {"☆".repeat(5 - r.rating)}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 break-words text-sm leading-6 text-neutral-600">
+                      {r.comment}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+
+            <form
+              className="box stack mt-6 space-y-4 rounded-xl border border-neutral-200 p-4 sm:p-6"
+              onSubmit={review}
+            >
+              <h3 className="text-lg font-semibold text-neutral-900">
+                {myReview ? "Edit your review" : "Leave a review"}
+              </h3>
+
+              {!customer?.token && (
+                <small className="text-sm text-neutral-500">
+                  Log in to submit a review.
+                </small>
+              )}
+
+              <label className="block space-y-2 text-sm font-medium text-neutral-700">
+                Rating
+                <select
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-3 text-sm outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  value={rating}
+                  onChange={(e) => setRating(Number(e.target.value))}
+                >
+                  {[5, 4, 3, 2, 1].map((n) => (
+                    <option key={n} value={n}>
+                      {n} stars
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block space-y-2 text-sm font-medium text-neutral-700">
+                Review
+                <textarea
+                  className="min-h-28 w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-3 text-sm font-normal outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  required
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Share your experience..."
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="btn orange w-full disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                disabled={!customer?.token}
+              >
+                {myReview ? "Update review" : "Submit review"}
+              </button>
+            </form>
+          </section>
         </div>
       </div>
     </main>
@@ -3380,6 +3370,19 @@ function Track() {
                   </span>
                 </div>
 
+                {/* ✅ নতুন: অ্যাডমিন ডিসকাউন্ট থাকলে দেখাবে */}
+                {Number(order.discountAmount) > 0 && (
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm text-emerald-700">
+                    <span>
+                      Discount
+                      {order.discountNote ? ` (${order.discountNote})` : ""}
+                    </span>
+                    <span className="font-semibold">
+                      − {money(order.discountAmount)}
+                    </span>
+                  </div>
+                )}
+
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <span className="font-bold">Total</span>
                   <span className="text-xl font-black text-orange-600">
@@ -4237,6 +4240,8 @@ function AdminNav() {
       <Link to="/admin/products">Products</Link>
       <Link to="/admin/banners">Banners</Link>
       <Link to="/admin/orders">Orders</Link>
+      <Link to="/admin/homepage">Homepage Sections</Link>
+      <Link to="/admin/pages">Pages</Link>
 
       <Link to="/admin/delivery" className="flex items-center gap-2">
         <Truck size={14} /> Delivery Settings
@@ -5551,6 +5556,632 @@ const PAYMENT_STATUS_META = {
   },
 };
 
+function OrderDiscountEditor({ order, onUpdated }) {
+  const [type, setType] = useState(order.discountType || "none");
+  const [value, setValue] = useState(String(order.discountValue || ""));
+  const [note, setNote] = useState(order.discountNote || "");
+  const [saving, setSaving] = useState(false);
+  const subtotal = Number(order.subtotal || 0);
+  const amount =
+    type === "fixed"
+      ? Math.min(subtotal, Math.max(0, Number(value) || 0))
+      : type === "percent"
+        ? Math.min(
+            subtotal,
+            Math.round(
+              (subtotal * Math.min(100, Math.max(0, Number(value) || 0))) / 100,
+            ),
+          )
+        : 0;
+
+  async function saveDiscount() {
+    if (
+      type !== "none" &&
+      (!(Number(value) > 0) || !Number.isFinite(Number(value)))
+    ) {
+      msg("Enter a valid discount value", "warning");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api(`/admin/orders/${order._id}/discount`, {
+        method: "PATCH",
+        body: {
+          discountType: type,
+          discountValue: type === "none" ? 0 : Number(value),
+          discountNote: note,
+        },
+      });
+      msg("Order discount updated");
+      await onUpdated?.();
+    } catch (e) {
+      msg(e.message || "Discount update failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-extrabold uppercase tracking-wide text-orange-800">
+          Admin discount
+        </h4>
+        <span className="text-xs font-bold text-orange-700">
+          Current: {money(order.discountAmount || 0)}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="min-h-10 rounded-lg border border-orange-200 bg-white px-3 text-sm"
+        >
+          <option value="none">No discount</option>
+          <option value="fixed">Fixed amount (৳)</option>
+          <option value="percent">Percentage (%)</option>
+        </select>
+        <input
+          type="number"
+          min="0"
+          max={type === "percent" ? 100 : subtotal}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={type === "none"}
+          placeholder={type === "percent" ? "Discount %" : "Discount amount"}
+          className="min-h-10 rounded-lg border border-orange-200 bg-white px-3 text-sm disabled:opacity-50"
+        />
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={200}
+          placeholder="Discount note (optional)"
+          className="min-h-10 rounded-lg border border-orange-200 bg-white px-3 text-sm"
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-neutral-600">
+          Subtotal {money(subtotal)} · Discount −{money(amount)} · Delivery{" "}
+          {money(order.deliveryCharge)} ·{" "}
+          <b>
+            Payable{" "}
+            {money(
+              Math.max(
+                0,
+                subtotal - amount + Number(order.deliveryCharge || 0),
+              ),
+            )}
+          </b>
+        </p>
+        <button
+          type="button"
+          onClick={saveDiscount}
+          disabled={saving}
+          className="min-h-9 rounded-lg bg-orange-600 px-4 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-60"
+        >
+          {saving ? "Saving..." : "Apply discount"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AdminHomepageSections() {
+  const qc = useQueryClient();
+  const { data: sections = [], isLoading } = useQuery({
+    queryKey: ["admin-home-sections"],
+    queryFn: () => apiFetch("/admin/homepage/sections"),
+  });
+  const { data: products = [] } = useQuery({
+    queryKey: ["admin-products"],
+    queryFn: () => apiFetch("/admin/products"),
+  });
+  const blank = {
+    key: "",
+    title: "",
+    eyebrow: "",
+    subtitle: "",
+    mode: "manual",
+    category: "",
+    limit: 8,
+    productIds: [],
+    active: true,
+    sortOrder: 0,
+  };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState("");
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm((old) => ({ ...old, [k]: v }));
+  function edit(s) {
+    setEditing(s._id);
+    setForm({
+      ...blank,
+      ...s,
+      key: s.key || "",
+      productIds: (s.productIds || []).map((p) => String(p._id || p)),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api(
+        editing
+          ? `/admin/homepage/sections/${editing}`
+          : "/admin/homepage/sections",
+        { method: editing ? "PATCH" : "POST", body: form },
+      );
+      await qc.invalidateQueries({ queryKey: ["admin-home-sections"] });
+      setForm(blank);
+      setEditing("");
+      msg("Homepage section saved");
+    } catch (err) {
+      msg(err.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function remove(id) {
+    const ok = await Swal.fire({
+      title: "Delete section?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+    });
+    if (!ok.isConfirmed) return;
+    try {
+      await api(`/admin/homepage/sections/${id}`, { method: "DELETE" });
+      await qc.invalidateQueries({ queryKey: ["admin-home-sections"] });
+      msg("Section deleted");
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+  return (
+    <section className="adminmain">
+      <Heading
+        tag="STORE CONTENT"
+        title="Homepage Sections"
+        desc="Choose exactly which products appear in each homepage section."
+      />
+      <form
+        onSubmit={save}
+        className="mb-6 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6"
+      >
+        <h2 className="mb-4 text-lg font-extrabold">
+          {editing ? "Edit section" : "Create homepage section"}
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="text-xs font-bold">
+            Section key
+            <input
+              required
+              value={form.key}
+              disabled={!!editing}
+              onChange={(e) =>
+                set(
+                  "key",
+                  e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+                )
+              }
+              placeholder="featured-products"
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            Title
+            <input
+              value={form.title}
+              onChange={(e) => set("title", e.target.value)}
+              placeholder="Featured Products"
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            Eyebrow
+            <input
+              value={form.eyebrow}
+              onChange={(e) => set("eyebrow", e.target.value)}
+              placeholder="THE GOOD STUFF"
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            Subtitle
+            <input
+              value={form.subtitle}
+              onChange={(e) => set("subtitle", e.target.value)}
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            Product source
+            <select
+              value={form.mode}
+              onChange={(e) => set("mode", e.target.value)}
+              className="mt-1 min-h-11 w-full rounded-lg border bg-white px-3 text-sm font-normal"
+            >
+              <option value="manual">Manually selected</option>
+              <option value="auto">Category / Latest</option>
+              <option value="newest">Newest arrivals</option>
+              <option value="bestseller">Best sellers</option>
+              <option value="discounted">Discounted products</option>
+            </select>
+          </label>
+          <label className="text-xs font-bold">
+            Category (auto only)
+            <input
+              value={form.category}
+              onChange={(e) => set("category", e.target.value)}
+              placeholder="Oversized T-shirt"
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            Number of products
+            <input
+              type="number"
+              min="1"
+              max="40"
+              value={form.limit}
+              onChange={(e) => set("limit", Number(e.target.value))}
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            Display order
+            <input
+              type="number"
+              value={form.sortOrder}
+              onChange={(e) => set("sortOrder", Number(e.target.value))}
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+            />
+          </label>
+        </div>
+        {form.mode === "manual" && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-extrabold uppercase text-neutral-500">
+              Select products in display order
+            </p>
+            <div className="grid max-h-64 grid-cols-1 gap-2 overflow-auto rounded-xl border border-neutral-200 p-3 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((p) => (
+                <label
+                  key={p._id}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg p-2 text-sm hover:bg-neutral-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.productIds.includes(String(p._id))}
+                    onChange={(e) =>
+                      set(
+                        "productIds",
+                        e.target.checked
+                          ? [...form.productIds, String(p._id)]
+                          : form.productIds.filter(
+                              (id) => id !== String(p._id),
+                            ),
+                      )
+                    }
+                  />
+                  <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                  <span className="text-xs text-neutral-400">৳{p.price}</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-neutral-400">
+              Selected: {form.productIds.length}. Items follow selection order.
+            </p>
+          </div>
+        )}
+        <label className="mt-4 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.active}
+            onChange={(e) => set("active", e.target.checked)}
+          />
+          Visible on homepage
+        </label>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            disabled={saving}
+            className="rounded-lg bg-neutral-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-60"
+          >
+            {saving
+              ? "Saving..."
+              : editing
+                ? "Update section"
+                : "Create section"}
+          </button>
+          {editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing("");
+                setForm(blank);
+              }}
+              className="rounded-lg border px-5 py-3 text-sm font-bold"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+      <div className="space-y-3">
+        {isLoading ? (
+          <Loader text="Loading sections" />
+        ) : (
+          sections.map((s) => (
+            <article
+              key={s._id}
+              className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <b>{s.title || s.key}</b>
+                  <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-bold">
+                    {s.mode}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold ${s.active ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500"}`}
+                  >
+                    {s.active ? "Visible" : "Hidden"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {s.eyebrow} · {s.limit} products · Order {s.sortOrder}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => edit(s)}
+                  className="rounded-lg border px-3 py-2 text-xs font-bold"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => remove(s._id)}
+                  className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AdminPages() {
+  const qc = useQueryClient();
+  const { data: pages = [], isLoading } = useQuery({
+    queryKey: ["admin-pages"],
+    queryFn: () => apiFetch("/admin/pages"),
+  });
+  const blank = { title: "", slug: "", content: "", published: true };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState("");
+  const [saving, setSaving] = useState(false);
+  const change = (k, v) => setForm((old) => ({ ...old, [k]: v }));
+  function edit(p) {
+    setEditing(p._id);
+    setForm({
+      title: p.title || "",
+      slug: p.slug || "",
+      content: p.content || "",
+      published: !!p.published,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api(editing ? `/admin/pages/${editing}` : "/admin/pages", {
+        method: editing ? "PATCH" : "POST",
+        body: form,
+      });
+      await qc.invalidateQueries({ queryKey: ["admin-pages"] });
+      setEditing("");
+      setForm(blank);
+      msg("Page saved");
+    } catch (e) {
+      msg(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function remove(id) {
+    const ok = await Swal.fire({
+      title: "Delete this page?",
+      text: "This page will no longer be available on the store.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+    });
+    if (!ok.isConfirmed) return;
+    try {
+      await api(`/admin/pages/${id}`, { method: "DELETE" });
+      await qc.invalidateQueries({ queryKey: ["admin-pages"] });
+      msg("Page deleted");
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+  return (
+    <section className="adminmain">
+      <Heading
+        tag="STORE CONTENT"
+        title="Page Manager"
+        desc="Create and manage About, FAQ, Size Guide, campaign and other store pages."
+      />
+      <form
+        onSubmit={save}
+        className="mb-6 space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6"
+      >
+        <h2 className="text-lg font-extrabold">
+          {editing ? "Edit page" : "Create new page"}
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-xs font-bold">
+            Page title
+            <input
+              required
+              value={form.title}
+              onChange={(e) => change("title", e.target.value)}
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+              placeholder="About Us"
+            />
+          </label>
+          <label className="text-xs font-bold">
+            URL slug
+            <input
+              required
+              value={form.slug}
+              onChange={(e) =>
+                change(
+                  "slug",
+                  e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+                )
+              }
+              className="mt-1 min-h-11 w-full rounded-lg border px-3 text-sm font-normal"
+              placeholder="about-us"
+            />
+            <span className="mt-1 block font-normal text-neutral-400">
+              Store URL: /page/{form.slug || "your-page"}
+            </span>
+          </label>
+        </div>
+        <label className="block text-xs font-bold">
+          Page content
+          <textarea
+            required
+            rows={12}
+            value={form.content}
+            onChange={(e) => change("content", e.target.value)}
+            className="mt-1 w-full rounded-lg border p-3 text-sm font-normal"
+            placeholder="Write your page content here..."
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.published}
+            onChange={(e) => change("published", e.target.checked)}
+          />
+          Published
+        </label>
+        <div className="flex gap-2">
+          <button
+            disabled={saving}
+            className="rounded-lg bg-neutral-950 px-5 py-3 text-sm font-bold text-white"
+          >
+            {saving ? "Saving..." : editing ? "Update page" : "Create page"}
+          </button>
+          {editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing("");
+                setForm(blank);
+              }}
+              className="rounded-lg border px-5 py-3 text-sm font-bold"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+      <div className="space-y-3">
+        {isLoading ? (
+          <Loader text="Loading pages" />
+        ) : (
+          pages.map((p) => (
+            <article
+              key={p._id}
+              className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <b>{p.title}</b>
+                <p className="mt-1 text-xs text-neutral-500">
+                  /page/{p.slug} · {p.published ? "Published" : "Draft"}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={`/page/${p.slug}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border px-3 py-2 text-xs font-bold"
+                >
+                  View
+                </a>
+                <button
+                  onClick={() => edit(p)}
+                  className="rounded-lg border px-3 py-2 text-xs font-bold"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => remove(p._id)}
+                  className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DynamicPage() {
+  const { slug } = useParams();
+  const [page, setPage] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    api(`/pages/${encodeURIComponent(slug)}`, { auth: false })
+      .then((p) => {
+        if (live) setPage(p);
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [slug]);
+  if (loading)
+    return (
+      <main className="wrap page">
+        <Loader text="Loading page" />
+      </main>
+    );
+  if (error || !page) return <NotFound />;
+  return (
+    <main className="wrap page">
+      <article className="mx-auto max-w-4xl rounded-2xl border border-neutral-200 bg-white p-5 sm:p-9">
+        <p className="text-xs font-bold uppercase tracking-widest text-orange-600">
+          Take It Easy
+        </p>
+        <h1 className="mt-2 text-3xl font-black">{page.title}</h1>
+        <div className="mt-6 whitespace-pre-wrap break-words text-sm leading-8 text-neutral-700">
+          {page.content}
+        </div>
+      </article>
+    </main>
+  );
+}
+
 function AdminOrders() {
   const queryClient = useQueryClient();
 
@@ -6149,6 +6780,17 @@ function AdminOrders() {
                               {money(o.deliveryCharge)}
                             </span>
                           </div>
+                          {Number(o.discountAmount || 0) > 0 && (
+                            <div className="flex justify-between text-emerald-700">
+                              <span>
+                                Admin discount{" "}
+                                {o.discountNote ? `(${o.discountNote})` : ""}
+                              </span>
+                              <span className="tabular-nums">
+                                −{money(o.discountAmount)}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex justify-between border-t border-neutral-200 pt-1.5 font-black text-neutral-900">
                             <span>Total</span>
                             <span className="tabular-nums">
@@ -6156,6 +6798,10 @@ function AdminOrders() {
                             </span>
                           </div>
                         </div>
+                        <OrderDiscountEditor
+                          order={o}
+                          onUpdated={() => refresh(true)}
+                        />
                       </div>
                     </div>
 
@@ -6890,6 +7536,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/page/:slug" element={<DynamicPage />} />
         </Route>
 
         <Route path="/admin/login" element={<AdminLogin />} />
@@ -6903,6 +7550,8 @@ export default function App() {
             <Route path="orders" element={<AdminOrders />} />
             <Route path="delivery" element={<AdminDeliverySettings />} />
             <Route path="reports" element={<AdminReports />} />
+            <Route path="homepage" element={<AdminHomepageSections />} />
+            <Route path="pages" element={<AdminPages />} />
           </Route>
         </Route>
 

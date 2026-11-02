@@ -2430,3 +2430,38 @@ main.wrap.page.tie-account-page {
     margin-left: 12px;
   }
 }
+
+/* ============================================================ */
+/* ✅ THE GOOD STUFF heading gap কমানো                          */
+/* ============================================================ */
+.wrap.section .sectitle {
+  margin-top: 0;
+}
+
+main > section.wrap + section.wrap.section {
+  padding-top: 32px;
+}
+
+@media (max-width: 760px) {
+  main > section.wrap + section.wrap.section {
+    padding-top: 24px;
+  }
+}
+
+/* Take It Easy admin additions: safe to import alongside the existing stylesheet. */
+.tie-home-search {
+  padding-top: 12px !important;
+  padding-bottom: 0 !important;
+}
+.tie-home-search + .wrap.section {
+  padding-top: 12px !important;
+}
+@media (max-width: 760px) {
+  .tie-home-search {
+    padding-top: 8px !important;
+    padding-bottom: 0 !important;
+  }
+  .tie-home-search + .wrap.section {
+    padding-top: 10px !important;
+  }
+}
