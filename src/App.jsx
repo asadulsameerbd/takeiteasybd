@@ -879,7 +879,7 @@ function Home() {
       {/* ✅ নতুন: ডাইনামিক হোমপেজ সেকশন রেন্ডারিং */}
       {loading ? (
         <section className="wrap section">
-          <Loader text="Fetching the good stuff" />
+          <Loader text="Please Wait Some Time.." />
         </section>
       ) : sections.length === 0 ? (
         <section className="wrap section">
