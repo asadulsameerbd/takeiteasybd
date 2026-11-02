@@ -61,7 +61,7 @@ img {
   -webkit-backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 9999;
 }
 
 .head {
@@ -233,6 +233,8 @@ img {
   overflow: hidden;
 }
 .herotext {
+  position: relative;
+  z-index: 5 !important;
   padding: clamp(28px, 7vw, 100px);
   max-width: 780px;
   color: #fff;
@@ -306,6 +308,7 @@ img {
 /* ============ SLIDES ============ */
 .slides {
   position: absolute;
+  z-index: 10 !important;
   right: 24px;
   bottom: 24px;
   color: white;

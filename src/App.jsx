@@ -752,13 +752,13 @@ function Home() {
           }
         >
           <div
-            className={`pointer-events-none absolute inset-0 z-[5] bg-black transition-opacity duration-500 ${
+            className={`pointer-events-none absolute inset-0  bg-black transition-opacity duration-500 ${
               bannerFading ? "opacity-60" : "opacity-0"
             }`}
           />
 
           <div
-            className={`herotext relative z-20 transition-all duration-700 ease-out ${
+            className={`herotext relative  transition-all duration-700 ease-out ${
               bannerFading
                 ? "translate-y-2 opacity-0"
                 : "translate-y-0 opacity-100"
@@ -794,7 +794,7 @@ function Home() {
 
           {banners.length > 1 && (
             <>
-              <div className="slides relative z-30">
+              <div className="slides relative ">
                 <button
                   aria-label="Previous banner"
                   onClick={() =>
