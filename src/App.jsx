@@ -839,7 +839,7 @@ function Home() {
       {/* ✅ সার্চ সেকশন (গ্যাপ কমানো হয়েছে) */}
       <section
         className="wrap tie-home-search"
-        style={{ padding: "10px 0 0px", marginBottom: "-10px" }}
+        style={{ padding: "20px 0 0px", marginBottom: "-10px" }}
       >
         <form onSubmit={handleSearch} className="search-container">
           <div className="search-box">
