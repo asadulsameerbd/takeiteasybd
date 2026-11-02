@@ -161,12 +161,6 @@ function isSizeAvailable(product, size) {
   return getSizeStock(product, size) > 0;
 }
 
-/**
- * ✅ `isProductOutOfStock`
- * - `sizeStock`-এ কোনো size থাকলে তার total দেখে
- * - কিছু না থাকলে `stock` দেখে
- * - সব ক্ষেত্রে numeric coercion
- */
 function isProductOutOfStock(p) {
   if (!p) return true;
 
@@ -197,7 +191,6 @@ const orderKeys = {
   adminList: ["admin-orders"],
   newOrders: ["new-orders"],
 };
-
 /* ============================================================ */
 /* Reusable Loaders                                             */
 /* ============================================================ */
@@ -663,7 +656,6 @@ function Heading({ tag, title, desc }) {
     </div>
   );
 }
-
 /* ============================================================ */
 /* Home Page                                                    */
 /* ============================================================ */
@@ -673,7 +665,7 @@ function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [products, setProducts] = useState([]);
   const [banners, setBanners] = useState([]);
-  const [sections, setSections] = useState([]); // ✅ নতুন: ডাইনামিক সেকশনের জন্য
+  const [sections, setSections] = useState([]);
   const [slide, setSlide] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -694,7 +686,6 @@ function Home() {
     Promise.all([
       api("/products", { auth: false }),
       api("/banners", { auth: false }),
-      // ✅ নতুন: হোমপেজ সেকশন API কল
       api("/homepage/sections", { auth: false }).catch(() => []),
     ])
       .then(([p, b, s]) => {
@@ -845,10 +836,10 @@ function Home() {
         </div>
       </section>
 
-      {/* ✅ নতুন সার্চ সেকশন */}
+      {/* ✅ সার্চ সেকশন (গ্যাপ কমানো হয়েছে) */}
       <section
         className="wrap tie-home-search"
-        style={{ padding: "14px 0 6px" }}
+        style={{ padding: "10px 0 0px", marginBottom: "-10px" }}
       >
         <form onSubmit={handleSearch} className="search-container">
           <div className="search-box">
@@ -876,7 +867,6 @@ function Home() {
         </form>
       </section>
 
-      {/* ✅ নতুন: ডাইনামিক হোমপেজ সেকশন রেন্ডারিং */}
       {loading ? (
         <section className="wrap section">
           <Loader text="Please Wait Some Time.." />
@@ -889,11 +879,10 @@ function Home() {
         </section>
       ) : (
         sections.map((sec) => {
-          // স্টক আউট প্রোডাক্ট ফিল্টার করা
           const secProducts = sec.products.filter(
             (p) => !isProductOutOfStock(p),
           );
-          if (!secProducts.length) return null; // কোনো স্টক থাকা প্রোডাক্ট না থাকলে সেকশন দেখাবে না
+          if (!secProducts.length) return null;
 
           return (
             <section key={sec._id} className="wrap section">
@@ -927,7 +916,344 @@ function Home() {
 }
 
 /* ============================================================ */
-/* Products Page                                                */
+/* Products List Page (সব প্রোডাক্ট + ফিল্টার + সার্চ)         */
+/* ============================================================ */
+function Products() {
+  const { add } = useContext(C);
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") || "";
+
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [minPrice, setMinPrice] = useState(0);
+  const [maxPrice, setMaxPrice] = useState(10000);
+  const [visible, setVisible] = useState(12);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // ✅ URL-এর q পরিবর্তন হলে আপডেট
+  useEffect(() => {
+    setSearchQuery(initialQuery);
+  }, [initialQuery]);
+
+  useEffect(() => {
+    setLoading(true);
+    api("/products", { auth: false })
+      .then((data) => setProducts(Array.isArray(data) ? data : []))
+      .catch((e) => msg(e.message, "error"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ✅ ক্যাটাগরি লিস্ট
+  const categories = useMemo(() => {
+    const set = new Set();
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return ["All", ...Array.from(set)];
+  }, [products]);
+
+  // ✅ প্রাইস সিলিং
+  const priceCeiling = useMemo(() => {
+    const max = products.reduce((m, p) => Math.max(m, Number(p.price || 0)), 0);
+    return Math.max(1000, Math.ceil(max / 100) * 100);
+  }, [products]);
+
+  // ✅ ফিল্টার করা প্রোডাক্ট
+  const filtered = useMemo(() => {
+    let list = products;
+
+    // সার্চ
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (p) =>
+          String(p.title || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(p.description || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(p.category || "")
+            .toLowerCase()
+            .includes(q),
+      );
+    }
+
+    // ক্যাটাগরি
+    if (selectedCategory !== "All") {
+      list = list.filter((p) => p.category === selectedCategory);
+    }
+
+    // প্রাইস
+    list = list.filter((p) => {
+      const price = Number(p.price || 0);
+      return price >= minPrice && price <= maxPrice;
+    });
+
+    return list;
+  }, [products, searchQuery, selectedCategory, minPrice, maxPrice]);
+
+  const resetFilters = () => {
+    setSelectedCategory("All");
+    setMinPrice(0);
+    setMaxPrice(priceCeiling);
+    setVisible(12);
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+  };
+
+  return (
+    <main className="wrap page mx-auto w-full max-w-[1380px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <Heading
+        tag="SHOP ALL"
+        title="All products."
+        desc="Browse our entire collection of everyday essentials."
+      />
+
+      {/* সার্চ বার */}
+      <form onSubmit={handleSearch} className="mx-auto mt-6 w-full max-w-2xl">
+        <div className="relative flex items-center">
+          <Search size={18} className="absolute left-3.5 text-neutral-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setVisible(12);
+            }}
+            placeholder="Search products, categories..."
+            className="min-h-12 w-full rounded-xl border border-neutral-200 bg-white pl-11 pr-4 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+          />
+        </div>
+      </form>
+
+      <div className="mt-8 flex flex-col gap-6 lg:flex-row">
+        {/* ফিল্টার সাইডবার (ডেস্কটপ) */}
+        <aside className="hidden w-64 shrink-0 lg:block">
+          <FilterBox
+            categories={categories}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
+            minPrice={minPrice}
+            maxPrice={maxPrice}
+            setMinPrice={setMinPrice}
+            setMaxPrice={setMaxPrice}
+            priceCeiling={priceCeiling}
+            resetFilters={resetFilters}
+            setVisible={setVisible}
+          />
+        </aside>
+
+        {/* প্রোডাক্ট গ্রিড */}
+        <div className="min-w-0 flex-1">
+          {/* মোবাইল ফিল্টার টগল + রেজাল্ট কাউন্ট */}
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-sm text-neutral-500">
+              <b className="text-neutral-900">{filtered.length}</b> products
+              found
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((s) => !s)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-bold text-neutral-700 lg:hidden"
+            >
+              <Menu size={14} /> Filters
+            </button>
+          </div>
+
+          {/* মোবাইল ফিল্টার প্যানেল */}
+          {showFilters && (
+            <div className="mb-4 rounded-2xl border border-neutral-200 bg-white p-4 lg:hidden">
+              <FilterBox
+                categories={categories}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+                minPrice={minPrice}
+                maxPrice={maxPrice}
+                setMinPrice={setMinPrice}
+                setMaxPrice={setMaxPrice}
+                priceCeiling={priceCeiling}
+                resetFilters={resetFilters}
+                setVisible={setVisible}
+              />
+            </div>
+          )}
+
+          {loading ? (
+            <Loader text="Loading products" />
+          ) : filtered.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+                <ShoppingBag size={26} />
+              </div>
+              <h3 className="mt-4 text-lg font-extrabold text-neutral-900">
+                No products found
+              </h3>
+              <p className="mt-1 text-sm text-neutral-500">
+                Try changing your search or filters.
+              </p>
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="mt-4 rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600"
+              >
+                Reset filters
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+                {filtered.slice(0, visible).map((p) => (
+                  <Card key={p._id} p={p} add={add} />
+                ))}
+              </div>
+
+              {visible < filtered.length && (
+                <div className="mt-8 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setVisible((v) => v + 12)}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-6 py-2.5 text-sm font-bold text-neutral-800 transition hover:border-orange-400 hover:text-orange-600"
+                  >
+                    Load more <ChevronDown size={16} />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/* Reusable Filter Box Component */
+function FilterBox({
+  categories,
+  selectedCategory,
+  setSelectedCategory,
+  minPrice,
+  maxPrice,
+  setMinPrice,
+  setMaxPrice,
+  priceCeiling,
+  resetFilters,
+  setVisible,
+}) {
+  return (
+    <div className="w-full">
+      <div className="border-b border-neutral-100 pb-5">
+        <h4 className="mb-3 text-sm font-extrabold text-neutral-900">
+          Category
+        </h4>
+        <div className="space-y-1">
+          {categories.map((category) => (
+            <button
+              key={category}
+              type="button"
+              onClick={() => {
+                setSelectedCategory(category);
+                setVisible(12);
+              }}
+              className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-all duration-200 ${
+                selectedCategory === category
+                  ? "bg-orange-50 font-bold text-orange-700 shadow-sm ring-1 ring-orange-100"
+                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+              }`}
+            >
+              <span className="min-w-0 break-words">{category}</span>
+              {selectedCategory === category && (
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-500 text-[10px] text-white">
+                  ✓
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-b border-neutral-100 py-5">
+        <h4 className="mb-3 text-sm font-extrabold text-neutral-900">
+          Price Range
+        </h4>
+
+        <div className="mb-5 flex items-center justify-between gap-2">
+          <span className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-bold text-neutral-700">
+            ৳{minPrice}
+          </span>
+          <span className="text-[10px] font-bold uppercase text-neutral-400">
+            to
+          </span>
+          <span className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-bold text-neutral-700">
+            ৳{maxPrice}
+          </span>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 block text-xs font-semibold text-neutral-500">
+              Minimum price
+            </label>
+            <input
+              type="range"
+              min="0"
+              max={priceCeiling}
+              step="50"
+              value={Math.min(minPrice, priceCeiling)}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setMinPrice(value);
+                if (value > maxPrice) setMaxPrice(value);
+                setVisible(12);
+              }}
+              className="w-full cursor-pointer accent-orange-500"
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-xs font-semibold text-neutral-500">
+              Maximum price
+            </label>
+            <input
+              type="range"
+              min="0"
+              max={priceCeiling}
+              step="50"
+              value={Math.max(Math.min(maxPrice, priceCeiling), minPrice)}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setMaxPrice(value);
+                if (value < minPrice) setMinPrice(value);
+                setVisible(12);
+              }}
+              className="w-full cursor-pointer accent-orange-500"
+            />
+          </div>
+        </div>
+
+        <div className="mt-2 flex justify-between text-[10px] font-bold text-neutral-400">
+          <span>৳0</span>
+          <span>৳{priceCeiling}</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={resetFilters}
+        className="mt-5 flex min-h-11 w-full items-center justify-center rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-bold transition-all duration-200 hover:border-orange-400 hover:bg-orange-50 hover:text-orange-700 active:scale-95"
+      >
+        Reset filters
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================ */
+/* Product Details Page                                         */
 /* ============================================================ */
 function Product() {
   const { slug } = useParams();
@@ -953,7 +1279,6 @@ function Product() {
         setSize(firstAvailable || sizes[0] || "");
         setActiveImage(0);
 
-        // ✅ নতুন: কাস্টমারের নিজের রিভিউ থাকলে ফর্মে সেটি লোড হবে (এডিটের জন্য)
         const myReview = d.reviews.find(
           (r) =>
             r.user === customer?.user?.id || r.user === customer?.user?._id,
@@ -1004,7 +1329,6 @@ function Product() {
   const hasCustomDelivery =
     deliveryCharges.dhaka > 0 || deliveryCharges.outside > 0;
 
-  // ✅ নতুন: কাস্টমারের নিজের রিভিউটি খুঁজে বের করা
   const myReview = data.reviews.find(
     (r) => r.user === customer?.user?.id || r.user === customer?.user?._id,
   );
@@ -1018,7 +1342,6 @@ function Product() {
         body: JSON.stringify({ rating, comment }),
       });
 
-      // ✅ রিভিউ সেভ হওয়ার পর ডাটা রিফ্রেশ করা
       const updatedData = await api("/products/" + slug, { auth: false });
       setData(updatedData);
 
@@ -1276,7 +1599,6 @@ function Product() {
 
             <div className="mt-5 space-y-4">
               {data.reviews.map((r) => {
-                // ✅ নিজের রিভিউ কিনা চেক করা
                 const isOwnReview =
                   r.user === customer?.user?.id ||
                   r.user === customer?.user?._id;
@@ -1372,540 +1694,9 @@ function Product() {
   );
 }
 
-/* Reusable Filter Box Component */
-function FilterBox({
-  categories,
-  selectedCategory,
-  setSelectedCategory,
-  minPrice,
-  maxPrice,
-  setMinPrice,
-  setMaxPrice,
-  priceCeiling,
-  resetFilters,
-  setVisible,
-}) {
-  return (
-    <div className="w-full">
-      <div className="border-b border-neutral-100 pb-5">
-        <h4 className="mb-3 text-sm font-extrabold text-neutral-900">
-          Category
-        </h4>
-        <div className="space-y-1">
-          {categories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              onClick={() => {
-                setSelectedCategory(category);
-                setVisible(12);
-              }}
-              className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-all duration-200 ${
-                selectedCategory === category
-                  ? "bg-orange-50 font-bold text-orange-700 shadow-sm ring-1 ring-orange-100"
-                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-              }`}
-            >
-              <span className="min-w-0 break-words">{category}</span>
-              {selectedCategory === category && (
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-500 text-[10px] text-white">
-                  ✓
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="border-b border-neutral-100 py-5">
-        <h4 className="mb-3 text-sm font-extrabold text-neutral-900">
-          Price Range
-        </h4>
-
-        <div className="mb-5 flex items-center justify-between gap-2">
-          <span className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-bold text-neutral-700">
-            ৳{minPrice}
-          </span>
-          <span className="text-[10px] font-bold uppercase text-neutral-400">
-            to
-          </span>
-          <span className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-bold text-neutral-700">
-            ৳{maxPrice}
-          </span>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-neutral-500">
-              Minimum price
-            </label>
-            <input
-              type="range"
-              min="0"
-              max={priceCeiling}
-              step="50"
-              value={Math.min(minPrice, priceCeiling)}
-              onChange={(e) => {
-                const value = Number(e.target.value);
-                setMinPrice(value);
-                if (value > maxPrice) setMaxPrice(value);
-                setVisible(12);
-              }}
-              className="w-full cursor-pointer accent-orange-500"
-            />
-          </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-neutral-500">
-              Maximum price
-            </label>
-            <input
-              type="range"
-              min="0"
-              max={priceCeiling}
-              step="50"
-              value={Math.max(Math.min(maxPrice, priceCeiling), minPrice)}
-              onChange={(e) => {
-                const value = Number(e.target.value);
-                setMaxPrice(value);
-                if (value < minPrice) setMinPrice(value);
-                setVisible(12);
-              }}
-              className="w-full cursor-pointer accent-orange-500"
-            />
-          </div>
-        </div>
-
-        <div className="mt-2 flex justify-between text-[10px] font-bold text-neutral-400">
-          <span>৳0</span>
-          <span>৳{priceCeiling}</span>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={resetFilters}
-        className="mt-5 flex min-h-11 w-full items-center justify-center rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-bold transition-all duration-200 hover:border-orange-400 hover:bg-orange-50 hover:text-orange-700 active:scale-95"
-      >
-        Reset filters
-      </button>
-    </div>
-  );
-}
-
-/* ============================================================ */
-/* Product Details                                              */
-/* ============================================================ */
-function Product() {
-  const { slug } = useParams();
-  const { add } = useContext(C);
-  const { customer } = useAuth();
-
-  const [data, setData] = useState(null);
-  const [size, setSize] = useState("");
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState("");
-  const [activeImage, setActiveImage] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  const trackedProductIdRef = useRef(null);
-
-  useEffect(() => {
-    setLoading(true);
-    api("/products/" + slug, { auth: false })
-      .then((d) => {
-        setData(d);
-        const sizes = d.product.sizes || [];
-        const firstAvailable = sizes.find((s) => isSizeAvailable(d.product, s));
-        setSize(firstAvailable || sizes[0] || "");
-        setActiveImage(0);
-      })
-      .catch((e) => msg(e.message, "error"))
-      .finally(() => setLoading(false));
-  }, [slug]);
-
-  useEffect(() => {
-    if (!data?.product) return;
-    if (trackedProductIdRef.current === data.product._id) return;
-    trackedProductIdRef.current = data.product._id;
-
-    const id = setTimeout(() => {
-      pixel.viewContent(data.product);
-    }, 300);
-
-    return () => clearTimeout(id);
-  }, [data?.product?._id]);
-
-  if (loading || !data) {
-    return (
-      <main className="wrap page">
-        <Loader text="Loading product" />
-      </main>
-    );
-  }
-
-  const p = data.product;
-  const isOutOfStock = isProductOutOfStock(p);
-  const discount = getDiscountInfo(p);
-
-  const images = p.images?.length
-    ? p.images
-    : ["https://placehold.co/800x900?text=Take+It+Easy"];
-
-  const selectedImage = Math.min(activeImage, images.length - 1);
-
-  const deliveryCharges = normalizeDeliveryCharges(p.deliveryCharges);
-  const hasCustomDelivery =
-    deliveryCharges.dhaka > 0 || deliveryCharges.outside > 0;
-
-  async function review(e) {
-    e.preventDefault();
-
-    try {
-      await api(`/products/${p._id}/reviews`, {
-        method: "POST",
-        body: JSON.stringify({ rating, comment }),
-      });
-
-      setData(await api("/products/" + slug, { auth: false }));
-      setComment("");
-      msg("Review saved.");
-    } catch (e) {
-      msg(e.message, "error");
-    }
-  }
-
-  return (
-    <main className="wrap page mx-auto w-full max-w-[1380px] px-4 py-5 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-      <p className="crumb mb-5 break-words text-sm text-neutral-500 sm:mb-8">
-        <Link to="/" className="transition hover:text-orange-600">
-          Home
-        </Link>{" "}
-        /{" "}
-        <Link to="/products" className="transition hover:text-orange-600">
-          Shop
-        </Link>{" "}
-        / <span className="text-neutral-800">{p.title}</span>
-      </p>
-
-      <div className="flex w-full flex-col items-start gap-7 sm:gap-9 xl:grid xl:grid-cols-2 xl:gap-12">
-        <div className="w-full min-w-0">
-          <div className="w-full">
-            <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[#f5f3ef] sm:rounded-2xl">
-              <img
-                key={images[selectedImage]}
-                src={images[selectedImage]}
-                alt={p.title}
-                className={`h-full w-full object-contain transition-opacity duration-200 ${
-                  isOutOfStock ? "opacity-70" : ""
-                }`}
-              />
-
-              {images.length > 1 && (
-                <span className="absolute bottom-3 right-3 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
-                  {selectedImage + 1} / {images.length}
-                </span>
-              )}
-
-              {isOutOfStock && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/25 backdrop-blur-[1px]">
-                  <span className="rotate-[-8deg] rounded-lg bg-stone-900 px-5 py-2.5 text-base font-black uppercase tracking-widest text-white shadow-xl sm:text-lg">
-                    Stock Out
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 flex gap-2.5 overflow-x-auto pb-2 sm:mt-4 sm:gap-3">
-              {images.map((src, i) => (
-                <button
-                  type="button"
-                  key={`${src}-${i}`}
-                  onClick={() => setActiveImage(i)}
-                  aria-label={`View product image ${i + 1}`}
-                  aria-pressed={selectedImage === i}
-                  className={`relative h-[76px] w-[64px] shrink-0 overflow-hidden rounded-lg border-2 bg-[#f5f3ef] transition-all duration-200 sm:h-24 sm:w-20 ${
-                    selectedImage === i
-                      ? "border-orange-500 opacity-100 ring-1 ring-orange-500"
-                      : "border-transparent opacity-70 hover:border-neutral-300 hover:opacity-100"
-                  }`}
-                >
-                  <img
-                    src={src}
-                    alt={`${p.title} thumbnail ${i + 1}`}
-                    loading="lazy"
-                    className="h-full w-full object-contain"
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="w-full min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="eyebrow">{p.category}</span>
-
-            {isOutOfStock && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-red-700">
-                <XCircle size={11} /> Stock Out
-              </span>
-            )}
-          </div>
-
-          <h1 className="mt-2 break-words text-2xl font-semibold leading-tight text-neutral-900 sm:text-3xl xl:text-4xl">
-            {p.title}
-          </h1>
-
-          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h2 className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold text-neutral-900 sm:text-3xl">
-              {money(p.price)}
-
-              {discount.percent > 0 && (
-                <del className="text-lg font-normal text-neutral-400 sm:text-xl">
-                  {money(discount.original)}
-                </del>
-              )}
-            </h2>
-
-            {discount.percent > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-orange-700">
-                <Percent size={11} /> {discount.percent}% off
-              </span>
-            )}
-          </div>
-
-          {hasCustomDelivery && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {deliveryCharges.dhaka > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
-                  <Truck size={12} /> ঢাকায় ৳{deliveryCharges.dhaka}
-                </span>
-              )}
-              {deliveryCharges.outside > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">
-                  <Truck size={12} /> ঢাকার বাইরে ৳{deliveryCharges.outside}
-                </span>
-              )}
-            </div>
-          )}
-
-          <p className="description mt-4 whitespace-pre-line break-words text-sm leading-7 text-neutral-600 sm:text-base">
-            {p.description}
-          </p>
-
-          {p.material && (
-            <p className="mt-4 text-sm text-neutral-700 sm:text-base">
-              <b>Material:</b> {p.material}
-            </p>
-          )}
-
-          {p.gsm && (
-            <p className="mt-2 text-sm text-neutral-700 sm:text-base">
-              <b>Weight:</b> {p.gsm}
-            </p>
-          )}
-
-          {p.sizes?.length > 0 && (
-            <div className="sizes mt-6">
-              <b className="mb-3 block text-sm text-neutral-900 sm:text-base">
-                Choose size
-              </b>
-
-              <div className="flex flex-wrap gap-2">
-                {p.sizes.map((s) => {
-                  const available = getSizeStock(p, s);
-                  const sizeOut = available <= 0;
-
-                  return (
-                    <button
-                      type="button"
-                      key={s}
-                      disabled={sizeOut || isOutOfStock}
-                      title={
-                        sizeOut
-                          ? `${s} — Stock out`
-                          : `${s} — ${available} in stock`
-                      }
-                      aria-pressed={s === size}
-                      onClick={() => {
-                        if (sizeOut || isOutOfStock) return;
-                        setSize(s);
-                      }}
-                      className={`min-w-12 rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
-                        s === size && !sizeOut
-                          ? "selected border-neutral-900 bg-neutral-900 text-white"
-                          : "border-neutral-300 bg-white text-neutral-800 hover:border-neutral-900"
-                      } ${
-                        sizeOut || isOutOfStock
-                          ? "cursor-not-allowed opacity-40 line-through"
-                          : ""
-                      }`}
-                    >
-                      {s}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="buyrow mt-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:mt-8">
-            {isOutOfStock ? (
-              <>
-                <button
-                  type="button"
-                  disabled
-                  className="flex min-h-12 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-100 px-4 py-3 text-sm font-bold text-neutral-400"
-                >
-                  <XCircle size={16} />
-                  <span>স্টক শেষ</span>
-                </button>
-
-                <Link
-                  to="/products"
-                  className="btn dark flex min-w-0 items-center justify-center gap-2"
-                >
-                  <span>অন্য পণ্য দেখুন</span>
-                  <ArrowRight className="h-4 w-4 shrink-0" />
-                </Link>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="btn orange flex min-w-0 items-center justify-center gap-2"
-                  onClick={() => {
-                    if (p.sizes?.length && !size) {
-                      return msg("Please select a size.", "warning");
-                    }
-
-                    if (p.sizes?.length && !isSizeAvailable(p, size)) {
-                      return msg(`${size} সাইজ স্টক আউট।`, "warning");
-                    }
-
-                    add(p, size);
-                  }}
-                >
-                  <span className="hind text-sm">কার্টে যোগ করুন</span>
-                  <ShoppingBag className="h-4 w-4 shrink-0" />
-                </button>
-
-                <button
-                  type="button"
-                  className="btn dark flex min-w-0 items-center justify-center gap-2"
-                  onClick={() => {
-                    if (p.sizes?.length && !size) {
-                      return msg("Please select a size.", "warning");
-                    }
-
-                    if (p.sizes?.length && !isSizeAvailable(p, size)) {
-                      return msg(`${size} সাইজ স্টক আউট।`, "warning");
-                    }
-
-                    pixel.addToCart(p, 1, size);
-
-                    add(p, size, false);
-                    location.href = "/checkout";
-                  }}
-                >
-                  <span>Buy now</span>
-                  <ArrowRight className="h-4 w-4 shrink-0" />
-                </button>
-              </>
-            )}
-          </div>
-
-          <section className="reviews mt-9 border-t border-neutral-200 pt-6 sm:mt-12 sm:pt-8">
-            <h2 className="text-xl font-semibold text-neutral-900 sm:text-2xl">
-              Customer reviews ({data.reviews.length})
-            </h2>
-
-            <div className="mt-5 space-y-4">
-              {data.reviews.map((r) => (
-                <article
-                  className="review rounded-xl border border-neutral-200 p-4 sm:p-5"
-                  key={r._id}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <b className="break-words text-sm text-neutral-900 sm:text-base">
-                      {r.userName}
-                    </b>
-
-                    <span
-                      className="shrink-0 text-sm tracking-wide text-amber-500"
-                      aria-label={`${r.rating} out of 5 stars`}
-                    >
-                      {"★".repeat(r.rating)}
-                      {"☆".repeat(5 - r.rating)}
-                    </span>
-                  </div>
-
-                  <p className="mt-2 break-words text-sm leading-6 text-neutral-600">
-                    {r.comment}
-                  </p>
-                </article>
-              ))}
-            </div>
-
-            <form
-              className="box stack mt-6 space-y-4 rounded-xl border border-neutral-200 p-4 sm:p-6"
-              onSubmit={review}
-            >
-              <h3 className="text-lg font-semibold text-neutral-900">
-                Leave a review
-              </h3>
-
-              {!customer?.token && (
-                <small className="text-sm text-neutral-500">
-                  Log in to submit a review.
-                </small>
-              )}
-
-              <label className="block space-y-2 text-sm font-medium text-neutral-700">
-                Rating
-                <select
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-3 text-sm outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                  value={rating}
-                  onChange={(e) => setRating(Number(e.target.value))}
-                >
-                  {[5, 4, 3, 2, 1].map((n) => (
-                    <option key={n} value={n}>
-                      {n} stars
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block space-y-2 text-sm font-medium text-neutral-700">
-                Review
-                <textarea
-                  className="min-h-28 w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-3 text-sm font-normal outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                  required
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Share your experience..."
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="btn orange w-full disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-                disabled={!customer?.token}
-              >
-                Submit review
-              </button>
-            </form>
-          </section>
-        </div>
-      </div>
-    </main>
-  );
-}
-
 /* Cart Page */
 function Cart() {
   const { cart, remove, update, total } = useContext(C);
-
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
@@ -1918,9 +1709,7 @@ function Cart() {
               Take It Easy
             </span>
           </div>
-
           <Heading tag="আপনার পছন্দ" title="আপনার কার্ট" />
-
           {cart.length > 0 && (
             <p className="mt-3 text-sm text-neutral-500 sm:text-base">
               আপনার পছন্দের পণ্যগুলো এখানে রাখা হয়েছে।
@@ -1933,15 +1722,12 @@ function Cart() {
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-orange-50 text-orange-500">
               <ShoppingBag size={36} />
             </div>
-
             <h2 className="mt-6 text-xl font-extrabold sm:text-2xl">
               আপনার কার্ট এখনো খালি!
             </h2>
-
             <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-neutral-500 sm:text-base">
               পছন্দের পণ্যটি বেছে নিন এবং আপনার স্টাইলকে আরও সুন্দর করে তুলুন।
             </p>
-
             <Link
               to="/products"
               className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-orange-500 px-7 py-3 text-sm font-bold text-white transition hover:bg-orange-600"
@@ -2095,25 +1881,10 @@ function Cart() {
                     </Link>
 
                     <div className="flex items-center justify-center gap-2 pt-1 text-center text-[11px] text-neutral-500">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        className="h-4 w-4 shrink-0 text-green-600"
-                        aria-hidden="true"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="m9 12 2 2 4-4"
-                        />
-                      </svg>
+                      <CheckCircle2
+                        size={16}
+                        className="shrink-0 text-green-600"
+                      />
                       নিরাপদ ও সহজ অর্ডার প্রক্রিয়া
                     </div>
                   </div>
@@ -2270,7 +2041,7 @@ function Checkout() {
   });
 
   const [selectedZone, setSelectedZone] = useState("dhaka");
-  const [manualZone, setManualZone] = useState(false); // ✅ নতুন
+  const [manualZone, setManualZone] = useState(false);
   const [delivery, setDelivery] = useState(0);
 
   const [uploading, setUploading] = useState(false);
@@ -2291,12 +2062,10 @@ function Checkout() {
 
   const detectedZone = detectDeliveryZone(f.city, f.address);
 
-  // ✅ manualZone true না হলে অটো-ডিটেক্ট হবে
   useEffect(() => {
     if (!manualZone) {
       setSelectedZone(detectedZone);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detectedZone, manualZone]);
 
   const productZoneCharges = cart
@@ -2325,7 +2094,6 @@ function Checkout() {
 
   useEffect(() => {
     setDelivery(autoDelivery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoDelivery]);
 
   const checkoutInitiatedRef = useRef(false);
@@ -2333,18 +2101,7 @@ function Checkout() {
     if (!cart.length || checkoutInitiatedRef.current) return;
     checkoutInitiatedRef.current = true;
     pixel.initiateCheckout(cart, total, itemCount);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const lastMethodRef = useRef(method);
-  useEffect(() => {
-    if (lastMethodRef.current === method) return;
-    lastMethodRef.current = method;
-    if (cart.length) {
-      pixel.addPaymentInfo(cart, total, itemCount, method);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method]);
 
   const methods = [
     {
@@ -2403,13 +2160,11 @@ function Checkout() {
 
     try {
       const imageData = await fileData(selectedFile, 500, 0.7);
-
       const response = await api("/public/payment-proof", {
         method: "POST",
         auth: false,
         body: JSON.stringify({ imageData }),
       });
-
       setUploadedUrl(response.imageUrl);
     } catch (err) {
       setUploadError(err.message || "Upload failed. Please try again.");
@@ -2432,7 +2187,6 @@ function Checkout() {
           throw new Error(
             uploadError || "Image upload failed. Please try again.",
           );
-
         paymentScreenshot = uploadedUrl;
       }
 
@@ -2567,7 +2321,7 @@ function Checkout() {
             type="button"
             onClick={() => {
               setSelectedZone(z.v);
-              setManualZone(true); // ✅ নতুন লাইন
+              setManualZone(true);
             }}
             className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-3 text-sm font-bold transition ${
               active
@@ -2684,19 +2438,7 @@ function Checkout() {
               }`}
             >
               {active && (
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="3"
-                  className="h-3 w-3"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="m5 13 4 4L19 7"
-                  />
-                </svg>
+                <Check size={12} strokeWidth={3} className="text-white" />
               )}
             </span>
           </label>
@@ -2772,74 +2514,34 @@ function Checkout() {
           />
         ) : (
           <>
-            <div className="relative">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleFileUpload(e.target.files?.[0])}
-                disabled={uploading}
-                required={!uploadedUrl}
-                className="block w-full cursor-pointer rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-white hover:file:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => handleFileUpload(e.target.files?.[0])}
+              disabled={uploading}
+              required={!uploadedUrl}
+              className="block w-full cursor-pointer rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] file:font-bold file:text-white hover:file:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            />
             {uploading && (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5">
-                <span className="tie-inline-loader dark" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-bold text-orange-800">
-                    Uploading screenshot...
-                  </p>
-                  <p className="text-[10px] text-orange-600">
-                    Please wait, this may take a moment.
-                  </p>
-                </div>
+                <InlineLoader dark />
+                <p className="text-[11px] font-bold text-orange-800">
+                  Uploading screenshot...
+                </p>
               </div>
             )}
-
             {!uploading && uploadedUrl && (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-                  <Check size={12} strokeWidth={3} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-bold text-emerald-800">
-                    Screenshot uploaded successfully
-                  </p>
-                  <a
-                    href={uploadedUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[10px] font-semibold text-emerald-600 underline"
-                  >
-                    View image ↗
-                  </a>
-                </div>
+                <Check size={14} className="text-emerald-600" />
+                <p className="text-[11px] font-bold text-emerald-800">
+                  Screenshot uploaded
+                </p>
               </div>
             )}
-
             {!uploading && uploadError && (
-              <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
-                <AlertCircle
-                  size={14}
-                  className="mt-0.5 shrink-0 text-red-600"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-bold text-red-700">
-                    Upload failed
-                  </p>
-                  <p className="text-[10px] text-red-600">{uploadError}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (file) handleFileUpload(file);
-                    }}
-                    className="mt-1 text-[10px] font-bold text-red-700 underline"
-                  >
-                    Try again
-                  </button>
-                </div>
-              </div>
+              <p className="mt-2 text-[11px] font-bold text-red-600">
+                {uploadError}
+              </p>
             )}
           </>
         )}
@@ -2855,206 +2557,101 @@ function Checkout() {
         <form onSubmit={submit} className="mt-6">
           <div className="flex flex-col gap-5 lg:grid lg:grid-cols-12 lg:items-start lg:gap-6">
             <div className="w-full min-w-0 space-y-4 lg:order-1 lg:col-span-7">
-              <div className="hidden lg:block">
-                <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-extrabold text-white">
-                      1
-                    </span>
-                    <h2 className="text-base font-extrabold">ডেলিভারি তথ্য</h2>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block min-w-0 col-span-2">
-                      <span className={labelCls}>পূর্ণ নাম</span>
-                      <input
-                        name="customerName"
-                        value={f.customerName}
-                        onChange={change}
-                        placeholder="আপনার পূর্ণ নাম লিখুন"
-                        required
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>ফোন নম্বর</span>
-                      <input
-                        name="phone"
-                        type="tel"
-                        inputMode="tel"
-                        value={f.phone}
-                        onChange={change}
-                        placeholder="01XXXXXXXXX"
-                        required
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>
-                        ইমেইল{" "}
-                        <span className="font-normal text-neutral-400">
-                          (ঐচ্ছিক)
-                        </span>
-                      </span>
-                      <input
-                        name="email"
-                        type="email"
-                        value={f.email}
-                        onChange={change}
-                        placeholder="you@example.com"
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>শহর / এলাকা</span>
-                      <input
-                        name="city"
-                        value={f.city}
-                        onChange={change}
-                        placeholder="যেমন: ঢাকা, চট্টগ্রাম"
-                        required
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0 col-span-2">
-                      <span className={labelCls}>সম্পূর্ণ ঠিকানা</span>
-                      <textarea
-                        name="address"
-                        value={f.address}
-                        onChange={change}
-                        placeholder="বাসা/রোড/এলাকা বিস্তারিত লিখুন"
-                        required
-                        rows={2}
-                        className={inputCls + " resize-y"}
-                      />
-                    </label>
-                  </div>
+              <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-extrabold text-white">
+                    1
+                  </span>
+                  <h2 className="text-sm font-extrabold sm:text-base">
+                    ডেলিভারি তথ্য
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block sm:col-span-2">
+                    <span className={labelCls}>পূর্ণ নাম</span>
+                    <input
+                      name="customerName"
+                      value={f.customerName}
+                      onChange={change}
+                      placeholder="আপনার পূর্ণ নাম লিখুন"
+                      required
+                      className={inputCls}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={labelCls}>ফোন নম্বর</span>
+                    <input
+                      name="phone"
+                      type="tel"
+                      inputMode="tel"
+                      value={f.phone}
+                      onChange={change}
+                      placeholder="01XXXXXXXXX"
+                      required
+                      className={inputCls}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={labelCls}>ইমেইল (ঐচ্ছিক)</span>
+                    <input
+                      name="email"
+                      type="email"
+                      value={f.email}
+                      onChange={change}
+                      placeholder="you@example.com"
+                      className={inputCls}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={labelCls}>শহর / এলাকা</span>
+                    <input
+                      name="city"
+                      value={f.city}
+                      onChange={change}
+                      placeholder="যেমন: ঢাকা, চট্টগ্রাম"
+                      required
+                      className={inputCls}
+                    />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className={labelCls}>সম্পূর্ণ ঠিকানা</span>
+                    <textarea
+                      name="address"
+                      value={f.address}
+                      onChange={change}
+                      placeholder="বাসা/রোড/এলাকা বিস্তারিত লিখুন"
+                      required
+                      rows={2}
+                      className={inputCls + " resize-y"}
+                    />
+                  </label>
+                </div>
 
-                  <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
-                    <span className="mb-2 block text-xs font-bold text-neutral-700">
-                      ডেলিভারি এরিয়া নির্বাচন করুন
-                    </span>
-                    {zoneSelector}
-                    <p className="mt-2 text-[11px] text-neutral-500">
-                      সঠিক এরিয়া বেছে নিন — এতে ডেলিভারি চার্জ ঠিক থাকবে।
-                      বর্তমান ডেলিভারি:{" "}
-                      <b className="text-orange-700">{money(delivery)}</b>
-                    </p>
-                  </div>
-                </section>
+                <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
+                  <span className="mb-2 block text-xs font-bold text-neutral-700">
+                    ডেলিভারি এরিয়া নির্বাচন করুন
+                  </span>
+                  {zoneSelector}
+                  <p className="mt-2 text-[11px] text-neutral-500">
+                    বর্তমান ডেলিভারি:{" "}
+                    <b className="text-orange-700">{money(delivery)}</b>
+                  </p>
+                </div>
+              </section>
 
-                <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-extrabold text-white">
-                      2
-                    </span>
-                    <h2 className="text-base font-extrabold">পেমেন্ট পদ্ধতি</h2>
-                  </div>
-                  {renderMethodsDesktop()}
-                  {paymentBox}
-                </section>
-              </div>
-
-              <div className="space-y-4 lg:hidden">
-                <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="mb-4 flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-extrabold text-white">
-                      1
-                    </span>
-                    <h2 className="text-sm font-extrabold sm:text-base">
-                      ডেলিভারি তথ্য
-                    </h2>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="block min-w-0">
-                      <span className={labelCls}>পূর্ণ নাম</span>
-                      <input
-                        name="customerName"
-                        value={f.customerName}
-                        onChange={change}
-                        placeholder="আপনার পূর্ণ নাম লিখুন"
-                        required
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>ফোন নম্বর</span>
-                      <input
-                        name="phone"
-                        type="tel"
-                        inputMode="tel"
-                        value={f.phone}
-                        onChange={change}
-                        placeholder="01XXXXXXXXX"
-                        required
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>
-                        ইমেইল{" "}
-                        <span className="font-normal text-neutral-400">
-                          (ঐচ্ছিক)
-                        </span>
-                      </span>
-                      <input
-                        name="email"
-                        type="email"
-                        value={f.email}
-                        onChange={change}
-                        placeholder="you@example.com"
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>শহর / এলাকা</span>
-                      <input
-                        name="city"
-                        value={f.city}
-                        onChange={change}
-                        placeholder="যেমন: ঢাকা, চট্টগ্রাম"
-                        required
-                        className={inputCls}
-                      />
-                    </label>
-                    <label className="block min-w-0">
-                      <span className={labelCls}>সম্পূর্ণ ঠিকানা</span>
-                      <textarea
-                        name="address"
-                        value={f.address}
-                        onChange={change}
-                        placeholder="বাসা/রোড/এলাকা বিস্তারিত লিখুন"
-                        required
-                        rows={3}
-                        className={inputCls + " resize-y"}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
-                    <span className="mb-2 block text-xs font-bold text-neutral-700">
-                      ডেলিভারি এরিয়া নির্বাচন করুন
-                    </span>
-                    {zoneSelector}
-                    <p className="mt-2 text-[11px] text-neutral-500">
-                      বর্তমান ডেলিভারি:{" "}
-                      <b className="text-orange-700">{money(delivery)}</b>
-                    </p>
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="mb-4 flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-extrabold text-white">
-                      2
-                    </span>
-                    <h2 className="text-sm font-extrabold sm:text-base">
-                      পেমেন্ট পদ্ধতি
-                    </h2>
-                  </div>
-                  {renderMethodsMobile()}
-                  {paymentBox}
-                </section>
-              </div>
+              <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-extrabold text-white">
+                    2
+                  </span>
+                  <h2 className="text-sm font-extrabold sm:text-base">
+                    পেমেন্ট পদ্ধতি
+                  </h2>
+                </div>
+                <div className="hidden sm:block">{renderMethodsDesktop()}</div>
+                <div className="sm:hidden">{renderMethodsMobile()}</div>
+                {paymentBox}
+              </section>
             </div>
 
             <aside className="w-full min-w-0 lg:order-2 lg:col-span-5 lg:sticky lg:top-6">
@@ -3114,7 +2711,7 @@ function Checkout() {
                   <button
                     type="submit"
                     disabled={busy || uploading}
-                    className="mt-4 hidden min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex"
+                    className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {uploading ? (
                       <>
@@ -3370,7 +2967,6 @@ function Track() {
                   </span>
                 </div>
 
-                {/* ✅ নতুন: অ্যাডমিন ডিসকাউন্ট থাকলে দেখাবে */}
                 {Number(order.discountAmount) > 0 && (
                   <div className="mt-2 flex items-center justify-between gap-3 text-sm text-emerald-700">
                     <span>
@@ -3410,7 +3006,7 @@ function Track() {
   );
 }
 
-/* Contact  page */
+/* Contact Page */
 function Contact() {
   const supportOptions = [
     {
@@ -3452,8 +3048,6 @@ function Contact() {
         <div className="pointer-events-none absolute -right-20 -top-20 -z-10 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl sm:h-96 sm:w-96" />
         <div className="pointer-events-none absolute -bottom-20 -left-20 -z-10 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl sm:h-96 sm:w-96" />
 
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
-
         <div className="relative z-10 w-full max-w-3xl">
           <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-orange-400/30 bg-orange-400/10 px-4 py-2 text-[10px] font-extrabold tracking-[0.15em] text-orange-400 sm:text-xs sm:tracking-[0.2em]">
             <span className="h-2 w-2 shrink-0 rounded-full bg-orange-400 animate-pulse" />
@@ -3481,54 +3075,20 @@ function Contact() {
                   "Hi Take It Easy! I need assistance with my order.",
                 )
               }
-              className="group inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-orange-600 hover:shadow-lg hover:shadow-orange-500/25 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 focus:ring-offset-neutral-950 min-[480px]:w-auto"
+              className="group inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-orange-600 min-[480px]:w-auto"
             >
               Chat on WhatsApp
-              <span
-                aria-hidden="true"
-                className="transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-              >
-                ↗
-              </span>
+              <span aria-hidden="true">↗</span>
             </button>
 
             <a
               href="tel:01933200699"
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:border-orange-400/50 hover:bg-white/10 min-[480px]:w-auto"
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-white min-[480px]:w-auto"
             >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                className="h-4 w-4 shrink-0"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 5a2 2 0 0 1 2-2h2.3a1 1 0 0 1 .95.68l1.1 3.3a1 1 0 0 1-.48 1.2l-1.7.94a11 11 0 0 0 4.7 4.7l.94-1.7a1 1 0 0 1 1.2-.48l3.3 1.1a1 1 0 0 1 .69.95V16a2 2 0 0 1-2 2h-1C9.93 18 4 12.07 4 5.9V5Z"
-                />
-              </svg>
+              <Phone size={16} />
               01933200699
             </a>
           </div>
-        </div>
-
-        <div className="relative z-10 mt-12 flex flex-col gap-3 border-t border-white/10 pt-6 min-[420px]:flex-row min-[420px]:flex-wrap min-[420px]:gap-x-6 min-[420px]:gap-y-3 sm:mt-16 sm:pt-8">
-          {["Friendly Support", "Easy Ordering", "Cash on Delivery"].map(
-            (item) => (
-              <div
-                key={item}
-                className="flex items-center gap-2 text-xs font-medium text-neutral-300 sm:text-sm"
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-400/20 text-[10px] text-orange-400">
-                  ✓
-                </span>
-                {item}
-              </div>
-            ),
-          )}
         </div>
       </section>
 
@@ -3541,11 +3101,6 @@ function Contact() {
           <h2 className="break-words text-2xl font-black leading-tight tracking-tight text-neutral-900 sm:text-3xl md:text-4xl">
             What do you need help with?
           </h2>
-
-          <p className="max-w-xl text-sm leading-7 text-neutral-500 sm:text-base">
-            তোমার প্রয়োজন অনুযায়ী একটি অপশন বেছে নাও। সরাসরি WhatsApp-এ আমাদের
-            সাথে কথা বলতে পারবে।
-          </p>
         </div>
 
         <div className="grid min-w-0 grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -3554,11 +3109,9 @@ function Contact() {
               key={item.title}
               type="button"
               onClick={() => openWhatsApp(item.message)}
-              className="group relative flex h-full min-w-0 flex-col items-start overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-950/5 focus:outline-none focus:ring-2 focus:ring-orange-400 sm:p-7"
+              className="group relative flex h-full min-w-0 flex-col items-start overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl sm:p-7"
             >
-              <div className="absolute inset-0 -z-10 bg-gradient-to-br from-orange-50/0 to-orange-50/0 transition-colors duration-300 group-hover:from-orange-50/50 group-hover:to-transparent" />
-
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl transition-colors group-hover:bg-orange-100 sm:h-14 sm:w-14 sm:rounded-2xl">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl sm:h-14 sm:w-14 sm:rounded-2xl">
                 {item.icon}
               </span>
 
@@ -3570,14 +3123,8 @@ function Contact() {
                 {item.description}
               </p>
 
-              <span className="mt-auto pt-6 inline-flex items-center gap-2 text-sm font-bold text-orange-600 transition-all group-hover:gap-3">
-                Get help
-                <span
-                  aria-hidden="true"
-                  className="transition-transform group-hover:translate-x-1"
-                >
-                  ↗
-                </span>
+              <span className="mt-auto pt-6 inline-flex items-center gap-2 text-sm font-bold text-orange-600">
+                Get help <ArrowUpRight size={16} />
               </span>
             </button>
           ))}
@@ -3586,10 +3133,7 @@ function Contact() {
     </main>
   );
 }
-
-/* ============================================================ */
-/* Customer Login                                               */
-/* ============================================================ */
+/* Customer Login */
 function Login() {
   const { customerLogin } = useAuth();
   const queryClient = useQueryClient();
@@ -3597,16 +3141,13 @@ function Login() {
 
   async function submit(e) {
     e.preventDefault();
-
     try {
       await customerLogin(f);
-
       queryClient.removeQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({
         queryKey: ["orders"],
         refetchType: "all",
       });
-
       location.href = "/profile";
     } catch (e) {
       msg(e.message, "error");
@@ -3616,7 +3157,6 @@ function Login() {
   return (
     <main className="wrap page narrow">
       <Heading tag="WELCOME BACK" title="Log in." />
-
       <form className="box stack" onSubmit={submit}>
         <label>
           Email
@@ -3627,7 +3167,6 @@ function Login() {
             required
           />
         </label>
-
         <label>
           Password
           <input
@@ -3637,9 +3176,7 @@ function Login() {
             required
           />
         </label>
-
         <button className="btn orange wide">Log in</button>
-
         <p>
           New here?{" "}
           <Link
@@ -3654,34 +3191,22 @@ function Login() {
   );
 }
 
-/* ============================================================ */
-/* Customer Registration                                        */
-/* ============================================================ */
+/* Customer Registration */
 function Register() {
   const { registerCustomer } = useAuth();
   const queryClient = useQueryClient();
-
-  const [f, setF] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    password: "",
-  });
+  const [f, setF] = useState({ name: "", email: "", phone: "", password: "" });
 
   async function submit(e) {
     e.preventDefault();
-
     try {
       await registerCustomer(f);
-
       pixel.completeRegistration();
-
       queryClient.removeQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({
         queryKey: ["orders"],
         refetchType: "all",
       });
-
       location.href = "/profile";
     } catch (e) {
       msg(e.message, "error");
@@ -3691,12 +3216,10 @@ function Register() {
   return (
     <main className="wrap page narrow">
       <Heading tag="JOIN THE EASY SIDE" title="Create account." />
-
       <form className="box stack" onSubmit={submit}>
         {["name", "email", "phone", "password"].map((k) => (
           <label key={k}>
             {k === "name" ? "Full name" : k[0].toUpperCase() + k.slice(1)}
-
             <input
               type={
                 k === "email" ? "email" : k === "password" ? "password" : "text"
@@ -3708,9 +3231,7 @@ function Register() {
             />
           </label>
         ))}
-
         <button className="btn orange wide">Create account</button>
-
         <p>
           Already registered?{" "}
           <Link
@@ -3725,391 +3246,19 @@ function Register() {
   );
 }
 
-/* ============================================================ */
-/* Customer Profile                                              */
-/* ============================================================ */
-function Profile() {
-  const { customer, updateProfile, logoutCustomer } = useAuth();
-  const queryClient = useQueryClient();
-
-  const userId = customer?.user?.id || customer?.user?._id;
-
-  const [f, setF] = useState({
-    name: customer?.user?.name || "",
-    email: customer?.user?.email || "",
-    phone: customer?.user?.phone || "",
-  });
-
-  useEffect(() => {
-    setF({
-      name: customer?.user?.name || "",
-      email: customer?.user?.email || "",
-      phone: customer?.user?.phone || "",
-    });
-  }, [customer?.user?.name, customer?.user?.email, customer?.user?.phone]);
-
-  const {
-    data: orders = [],
-    isLoading: loadingOrders,
-    error: orderQueryError,
-    refetch: refetchOrders,
-    isFetching: ordersFetching,
-  } = useQuery({
-    queryKey: orderKeys.mine(userId),
-    queryFn: async () => {
-      const data = await apiFetch("/orders/mine");
-      return Array.isArray(data) ? data : [];
-    },
-    enabled: !!customer?.token && !!userId,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    refetchOnMount: "always",
-    refetchInterval: 30000,
-    refetchIntervalInBackground: true,
-  });
-
-  useEffect(() => {
-    if (!orderChannel || !customer?.token) return;
-
-    const handler = () => {
-      queryClient.invalidateQueries({
-        queryKey: orderKeys.mine(userId),
-        refetchType: "all",
-      });
-      refetchOrders();
-    };
-
-    orderChannel.addEventListener("message", handler);
-    return () => orderChannel.removeEventListener("message", handler);
-  }, [customer?.token, userId, queryClient, refetchOrders]);
-
-  const orderError = orderQueryError?.message || "";
-
-  if (!customer?.token) {
-    return <Navigate to="/login" replace />;
-  }
-
-  async function save(e) {
-    e.preventDefault();
-
-    try {
-      await updateProfile(f);
-      msg("Profile updated successfully.");
-      await queryClient.invalidateQueries({
-        queryKey: ["orders"],
-        refetchType: "all",
-      });
-    } catch (error) {
-      msg(error.message, "error");
-    }
-  }
-
-  function handleLogout() {
-    queryClient.removeQueries({ queryKey: ["orders"] });
-    logoutCustomer();
-  }
-
-  const statusStyles = {
-    pending: "bg-amber-50 text-amber-700 ring-amber-200",
-    confirmed: "bg-blue-50 text-blue-700 ring-blue-200",
-    processing: "bg-violet-50 text-violet-700 ring-violet-200",
-    shipped: "bg-indigo-50 text-indigo-700 ring-indigo-200",
-    delivered: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    cancelled: "bg-red-50 text-red-700 ring-red-200",
-  };
-
-  const paymentLabels = {
-    cod: "Cash on Delivery",
-    bkash: "bKash",
-    nagad: "Nagad",
-    rocket: "Rocket",
-  };
-
-  return (
-    <main className="wrap page tie-account-page">
-      <Heading
-        tag="YOUR ACCOUNT"
-        title="My account."
-        desc="Manage your personal information and track your purchases."
-      />
-
-      <div className="tie-account-layout">
-        <aside className="tie-account-sidebar">
-          <form className="box stack tie-profile-form" onSubmit={save}>
-            <div className="tie-profile-heading">
-              <div className="tie-profile-avatar">
-                <UserRound size={23} />
-              </div>
-
-              <div>
-                <h2>Account details</h2>
-                <p>Manage your profile</p>
-              </div>
-            </div>
-
-            <label>
-              Full name
-              <input
-                type="text"
-                value={f.name}
-                onChange={(e) => setF({ ...f, name: e.target.value })}
-                required
-              />
-            </label>
-
-            <label>
-              Email address
-              <input
-                type="email"
-                value={f.email}
-                onChange={(e) => setF({ ...f, email: e.target.value })}
-                required
-              />
-            </label>
-
-            <label>
-              Phone number
-              <input
-                type="tel"
-                value={f.phone}
-                onChange={(e) => setF({ ...f, phone: e.target.value })}
-              />
-            </label>
-
-            <button type="submit" className="btn orange wide">
-              Save changes
-            </button>
-
-            <button
-              type="button"
-              className="btn outline wide"
-              onClick={handleLogout}
-            >
-              <LogOut size={16} />
-              Log out
-            </button>
-          </form>
-        </aside>
-
-        <section className="tie-orders-section">
-          <div className="tie-orders-heading">
-            <div>
-              <span className="eyebrow">YOUR PURCHASES</span>
-              <h2>My orders</h2>
-              <p>Your orders, products and delivery information.</p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="tie-order-count">
-                {orders.length} {orders.length === 1 ? "order" : "orders"}
-              </span>
-              <button
-                type="button"
-                onClick={() => refetchOrders()}
-                disabled={ordersFetching}
-                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
-                aria-label="Refresh orders"
-              >
-                <RefreshCw
-                  size={12}
-                  className={ordersFetching ? "animate-spin" : ""}
-                />
-                Refresh
-              </button>
-            </div>
-          </div>
-
-          {loadingOrders ? (
-            <Loader text="Loading your orders" />
-          ) : orderError ? (
-            <div className="tie-orders-message">
-              <p className="text-red-600">{orderError}</p>
-
-              <button
-                type="button"
-                className="btn outline"
-                onClick={() => refetchOrders()}
-              >
-                Try again
-              </button>
-            </div>
-          ) : orders.length === 0 ? (
-            <div className="tie-orders-message">
-              <ShoppingBag size={36} />
-
-              <h3>No orders yet</h3>
-
-              <p>
-                Your purchases will appear here after you place an order while
-                logged in.
-              </p>
-
-              <Link to="/products" className="btn orange">
-                Shop now <ArrowRight size={17} />
-              </Link>
-            </div>
-          ) : (
-            <div className="tie-orders-grid">
-              {orders.map((order) => {
-                const status = String(order.status || "pending").toLowerCase();
-                const zone = order.deliveryZone;
-
-                return (
-                  <article className="tie-order-card" key={order._id}>
-                    <div className="tie-order-card-header">
-                      <div className="tie-order-number">
-                        <span>ORDER NUMBER</span>
-
-                        <h3>{order.orderNumber || order._id}</h3>
-
-                        {order.createdAt && (
-                          <p>
-                            {new Date(order.createdAt).toLocaleDateString(
-                              "en-GB",
-                              {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                              },
-                            )}
-                          </p>
-                        )}
-                      </div>
-
-                      <span
-                        className={`tie-status ${
-                          statusStyles[status] ||
-                          "bg-stone-100 text-stone-700 ring-stone-200"
-                        }`}
-                      >
-                        {status.replaceAll("_", " ")}
-                      </span>
-                    </div>
-
-                    <div className="tie-order-items">
-                      {(order.items || []).map((item, index) => (
-                        <div
-                          className="tie-order-item"
-                          key={`${order._id}-${index}`}
-                        >
-                          <div className="tie-order-image">
-                            <img
-                              src={
-                                item.image ||
-                                "https://placehold.co/300x375?text=Take+It+Easy"
-                              }
-                              alt={item.title || "Ordered product"}
-                              loading="lazy"
-                              onError={(e) => {
-                                e.currentTarget.onerror = null;
-                                e.currentTarget.src =
-                                  "https://placehold.co/300x375?text=Product";
-                              }}
-                            />
-                          </div>
-
-                          <div className="tie-order-product-info">
-                            <h4>{item.title || "Product"}</h4>
-
-                            <p>Quantity: {item.quantity || 1}</p>
-
-                            {item.size && <p>Size: {item.size}</p>}
-
-                            <span>{money(item.price)} each</span>
-                          </div>
-
-                          <strong className="tie-item-total">
-                            {money(
-                              Number(item.price || 0) *
-                                Number(item.quantity || 1),
-                            )}
-                          </strong>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="tie-order-summary">
-                      <div>
-                        <span>Subtotal</span>
-                        <span>{money(order.subtotal)}</span>
-                      </div>
-
-                      <div>
-                        <span>
-                          Delivery charge
-                          {zone && ZONE_LABELS[zone] ? (
-                            <> · {ZONE_LABELS[zone]}</>
-                          ) : null}
-                        </span>
-                        <span>{money(order.deliveryCharge)}</span>
-                      </div>
-
-                      <div className="tie-total-row">
-                        <strong>Total</strong>
-                        <strong>{money(order.total)}</strong>
-                      </div>
-                    </div>
-
-                    <div className="tie-order-bottom">
-                      <div className="tie-payment">
-                        <span>PAYMENT METHOD</span>
-
-                        <strong>
-                          {paymentLabels[order.paymentMethod] ||
-                            order.paymentMethod ||
-                            "Not specified"}
-                        </strong>
-                      </div>
-
-                      <Link
-                        className="tie-track-button"
-                        to={`/track-order?order=${encodeURIComponent(
-                          order.orderNumber || "",
-                        )}&phone=${encodeURIComponent(order.phone || "")}`}
-                      >
-                        Track order <ArrowRight size={15} />
-                      </Link>
-                    </div>
-
-                    {(order.address || order.city) && (
-                      <div className="tie-delivery-address">
-                        <span>DELIVERY ADDRESS</span>
-
-                        <p>
-                          {order.address}
-                          {order.city ? `, ${order.city}` : ""}
-                        </p>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
-}
-
-/* ============================================================ */
-/* Admin Login                                                  */
-/* ============================================================ */
+/* Admin Login */
 function AdminLogin() {
   const { adminToken, loginAdmin } = useAuth();
   const [f, setF] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (adminToken) {
-    return <Navigate to="/admin" />;
-  }
+  if (adminToken) return <Navigate to="/admin" />;
 
   async function submit(e) {
     e.preventDefault();
     setError("");
     setBusy(true);
-
     try {
       await loginAdmin(f);
       location.href = "/admin";
@@ -4117,10 +3266,8 @@ function AdminLogin() {
       const message =
         e?.message && !/invalid|credential|login/i.test(e.message)
           ? e.message
-          : "Invalid admin credentials. Please check your email and password.";
-
+          : "Invalid admin credentials.";
       setError(message);
-
       Swal.fire({
         icon: "error",
         title: "Login failed",
@@ -4139,9 +3286,7 @@ function AdminLogin() {
           take it easy
           <small>ADMIN PANEL</small>
         </Link>
-
         <h1>Admin login.</h1>
-
         {error && (
           <div
             role="alert"
@@ -4151,7 +3296,6 @@ function AdminLogin() {
             <span>{error}</span>
           </div>
         )}
-
         <label>
           Email
           <input
@@ -4164,7 +3308,6 @@ function AdminLogin() {
             autoComplete="username"
           />
         </label>
-
         <label>
           Password
           <input
@@ -4177,7 +3320,6 @@ function AdminLogin() {
             autoComplete="current-password"
           />
         </label>
-
         <button className="btn orange wide" disabled={busy}>
           {busy ? (
             <>
@@ -4192,9 +3334,7 @@ function AdminLogin() {
   );
 }
 
-/* ============================================================ */
-/* Admin Navigation                                             */
-/* ============================================================ */
+/* Admin Navigation */
 function AdminNav() {
   const { logoutAdmin } = useAuth();
   const queryClient = useQueryClient();
@@ -4222,13 +3362,10 @@ function AdminNav() {
         take it easy
         <small>ADMIN PANEL</small>
       </Link>
-
       <Link to="/admin">Overview</Link>
-
       <Link to="/admin/new-orders" className="relative">
         <span className="flex items-center gap-2">
-          <Bell size={14} />
-          New Orders
+          <Bell size={14} /> New Orders
           {newCount > 0 && (
             <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-black text-white">
               {newCount > 99 ? "99+" : newCount}
@@ -4236,25 +3373,20 @@ function AdminNav() {
           )}
         </span>
       </Link>
-
       <Link to="/admin/products">Products</Link>
       <Link to="/admin/banners">Banners</Link>
       <Link to="/admin/orders">Orders</Link>
       <Link to="/admin/homepage">Homepage Sections</Link>
       <Link to="/admin/pages">Pages</Link>
-
       <Link to="/admin/delivery" className="flex items-center gap-2">
         <Truck size={14} /> Delivery Settings
       </Link>
-
       <Link to="/admin/reports" className="flex items-center gap-2">
         <TrendingUp size={14} /> Reports
       </Link>
-
       <Link to="/" target="_blank">
         View store ↗
       </Link>
-
       <button className="btn dark wide" onClick={handleAdminLogout}>
         Log out
       </button>
@@ -4274,19 +3406,16 @@ function AdminLayout() {
 /* Admin Dashboard */
 function Dashboard() {
   const queryClient = useQueryClient();
-
   const productsQuery = useQuery({
     queryKey: ["admin-products"],
     queryFn: () => apiFetch("/admin/products"),
     staleTime: 0,
   });
-
   const bannersQuery = useQuery({
     queryKey: ["admin-banners"],
     queryFn: () => apiFetch("/admin/banners"),
     staleTime: 0,
   });
-
   const ordersQuery = useQuery({
     queryKey: orderKeys.adminList,
     queryFn: () => apiFetch("/admin/orders"),
@@ -4295,13 +3424,11 @@ function Dashboard() {
 
   const loading =
     productsQuery.isLoading || bannersQuery.isLoading || ordersQuery.isLoading;
-
   const error =
     productsQuery.error?.message ||
     bannersQuery.error?.message ||
     ordersQuery.error?.message ||
     "";
-
   const counts = [
     productsQuery.data?.length || 0,
     bannersQuery.data?.length || 0,
@@ -4315,11 +3442,9 @@ function Dashboard() {
         title="Overview."
         desc="Your store, in one place."
       />
-
       {error && (
         <div className="error">
           {error}
-
           <button
             type="button"
             className="btn outline"
@@ -4333,7 +3458,6 @@ function Dashboard() {
           </button>
         </div>
       )}
-
       {loading ? (
         <Loader text="Loading dashboard" />
       ) : (
@@ -4350,22 +3474,13 @@ function Dashboard() {
           ))}
         </div>
       )}
-
-      <p>
-        Use the navigation to manage the catalogue, homepage banners, orders and
-        payment verification.
-      </p>
     </section>
   );
 }
-
-/* ============================================================ */
-/* Admin Products — ২টা zone delivery charges                   */
-/* ============================================================ */
+/* Admin Products — ২টা zone delivery charges */
 function AdminProducts() {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-
   const [files, setFiles] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
@@ -4416,16 +3531,13 @@ function AdminProducts() {
   function startEdit(p) {
     setEditingId(p._id);
     setFiles([]);
-
     const sizeArr = p.sizes || [];
     const prevStock = normalizeSizeStock(p.sizeStock);
     const sizeStockObj = {};
     sizeArr.forEach((s) => {
       sizeStockObj[s] = Math.max(0, Number(prevStock[s] ?? 0));
     });
-
     const dc = normalizeDeliveryCharges(p.deliveryCharges);
-
     setF({
       title: p.title || "",
       price: String(p.price ?? ""),
@@ -4447,7 +3559,6 @@ function AdminProducts() {
       imageUrls: (p.images || []).join("\n"),
       active: p.active !== false,
     });
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -4455,7 +3566,6 @@ function AdminProducts() {
     const price = Number(f.price) || 0;
     const compare = Number(f.compareAtPrice) || 0;
     const custom = Number(f.discountPercent) || 0;
-
     if (custom > 0 && custom < 100) {
       const original = Math.round(price / (1 - custom / 100));
       return {
@@ -4464,7 +3574,6 @@ function AdminProducts() {
         source: "custom",
       };
     }
-
     if (compare > price && price > 0) {
       return {
         percent: Math.round((1 - price / compare) * 100),
@@ -4472,7 +3581,6 @@ function AdminProducts() {
         source: "auto",
       };
     }
-
     return { percent: 0, original: 0, source: "none" };
   }, [f.price, f.compareAtPrice, f.discountPercent]);
 
@@ -4480,7 +3588,6 @@ function AdminProducts() {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
-
   const computedTotalStock = sizeList.length
     ? sizeList.reduce((sum, s) => sum + Number(f.sizeStock[s] || 0), 0)
     : Number(f.stock || 0);
@@ -4488,31 +3595,25 @@ function AdminProducts() {
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
-
     try {
       let images = f.imageUrls
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-
       if (files.length > 0) {
         const base64List = await Promise.all(
           files.map((file) => fileData(file, 1000, 0.8)),
         );
-
         const { imageUrls: uploaded } = await api("/uploads/images", {
           method: "POST",
           body: JSON.stringify({ images: base64List }),
         });
-
         images = [...uploaded, ...images];
       }
-
       const cleanSizeStock = {};
       sizeList.forEach((s) => {
         cleanSizeStock[s] = Math.max(0, Number(f.sizeStock[s] || 0));
       });
-
       const payload = {
         title: f.title,
         price: Number(f.price),
@@ -4542,7 +3643,6 @@ function AdminProducts() {
           .filter(Boolean),
         active: f.active !== false,
       };
-
       if (editingId) {
         await api("/admin/products/" + editingId, {
           method: "PATCH",
@@ -4556,7 +3656,6 @@ function AdminProducts() {
         });
         msg("Product added");
       }
-
       resetForm();
       await refresh();
       await queryClient.invalidateQueries({
@@ -4581,11 +3680,9 @@ function AdminProducts() {
             : "Add a product, then manage the list below."
         }
       />
-
       <form className="box stack" onSubmit={submit}>
         <div className="flex items-center justify-between">
           <h2>{editingId ? "Edit product" : "Add product"}</h2>
-
           {editingId && (
             <button
               type="button"
@@ -4597,7 +3694,6 @@ function AdminProducts() {
             </button>
           )}
         </div>
-
         <div className="formgrid">
           {[
             ["title", "Title"],
@@ -4633,13 +3729,12 @@ function AdminProducts() {
                   k === "discountPercent"
                     ? "Leave empty to auto-calc"
                     : k === "cost"
-                      ? "কেনার দাম (profit হিসাবের জন্য)"
+                      ? "কেনার দাম"
                       : undefined
                 }
               />
             </label>
           ))}
-
           <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
             <div className="mb-2 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
               <Truck size={12} /> Delivery charges (৳)
@@ -4647,7 +3742,6 @@ function AdminProducts() {
             <p className="mb-3 text-xs text-neutral-600">
               0 দিলে global default use হবে।
             </p>
-
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-xs font-bold text-neutral-700">
@@ -4664,7 +3758,6 @@ function AdminProducts() {
                   className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-orange-500"
                 />
               </label>
-
               <label className="block">
                 <span className="mb-1 block text-xs font-bold text-neutral-700">
                   Outside Dhaka
@@ -4682,7 +3775,6 @@ function AdminProducts() {
               </label>
             </div>
           </div>
-
           {sizeList.length > 0 && (
             <label className="span">
               Stock per size{" "}
@@ -4718,7 +3810,6 @@ function AdminProducts() {
               </div>
             </label>
           )}
-
           {sizeList.length === 0 && (
             <label>
               Stock
@@ -4729,7 +3820,6 @@ function AdminProducts() {
               />
             </label>
           )}
-
           <label className="span">
             Description
             <textarea
@@ -4737,12 +3827,10 @@ function AdminProducts() {
               onChange={(e) => setF({ ...f, description: e.target.value })}
             />
           </label>
-
           <div className="span rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-3">
             <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-orange-700">
               <Tag size={12} /> Discount preview
             </div>
-
             {previewDiscount.percent > 0 ? (
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <span className="inline-flex items-center gap-1 rounded-full bg-orange-600 px-3 py-1 text-xs font-extrabold text-white">
@@ -4754,25 +3842,18 @@ function AdminProducts() {
                     {money(previewDiscount.original)}
                   </del>
                 </span>
-                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-orange-600 ring-1 ring-orange-200">
-                  {previewDiscount.source === "custom"
-                    ? "Manual override"
-                    : "Auto-calculated"}
-                </span>
               </div>
             ) : (
               <p className="mt-2 text-xs text-neutral-500">
-                Enter a compare-at price higher than the sale price to auto-show
-                a discount badge, or set a custom % manually.
+                Enter a compare-at price to auto-show a discount badge, or set a
+                custom % manually.
               </p>
             )}
           </div>
-
           <div className="span rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-3">
             <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
               {f.active ? <Eye size={12} /> : <EyeOff size={12} />} Visibility
             </div>
-
             <label className="mt-2 flex cursor-pointer items-start gap-3">
               <input
                 type="checkbox"
@@ -4787,13 +3868,11 @@ function AdminProducts() {
                     : "Product is hidden"}
                 </span>
                 <span className="block text-xs text-neutral-500">
-                  Unchecked করলে store-এ product দেখা যাবে না, কিন্তু database-এ
-                  থাকবে।
+                  Unchecked করলে store-এ দেখা যাবে না।
                 </span>
               </div>
             </label>
           </div>
-
           <label className="span">
             Upload images (multiple, 5 MB each max)
             <input
@@ -4805,11 +3884,10 @@ function AdminProducts() {
             {files.length > 0 && (
               <small className="text-green-600">
                 ✓ {files.length} image{files.length > 1 ? "s" : ""} selected
-                {editingId ? " (will be added to existing images)" : ""}
+                {editingId ? " (will be added to existing)" : ""}
               </small>
             )}
           </label>
-
           <label className="span">
             Image URLs, one per line
             <textarea
@@ -4818,7 +3896,6 @@ function AdminProducts() {
             />
           </label>
         </div>
-
         <button className="btn orange" disabled={busy}>
           {busy ? (
             <>
@@ -4832,7 +3909,6 @@ function AdminProducts() {
           )}
         </button>
       </form>
-
       {loading ? (
         <Loader text="Loading products" />
       ) : (
@@ -4847,7 +3923,6 @@ function AdminProducts() {
               <RefreshCw size={14} /> Refresh
             </button>
           </div>
-
           {items.map((p) => {
             const discount = getDiscountInfo(p);
             const stockObj = normalizeSizeStock(p.sizeStock);
@@ -4855,7 +3930,6 @@ function AdminProducts() {
             const dc = normalizeDeliveryCharges(p.deliveryCharges);
             const hasCustomDelivery = dc.dhaka > 0 || dc.outside > 0;
             const hidden = isProductHidden(p);
-
             return (
               <div
                 className={`adminrow ${hidden ? "opacity-60" : ""}`}
@@ -4865,7 +3939,6 @@ function AdminProducts() {
                   src={p.images?.[0] || "https://placehold.co/80x90"}
                   alt=""
                 />
-
                 <div>
                   <b>{p.title}</b>
                   {hidden && (
@@ -4897,7 +3970,6 @@ function AdminProducts() {
                       </>
                     )}
                   </small>
-
                   {hasCustomDelivery && (
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
                       {dc.dhaka > 0 && (
@@ -4912,17 +3984,12 @@ function AdminProducts() {
                       )}
                     </div>
                   )}
-
                   {hasSizeStock && (
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
                       {Object.entries(stockObj).map(([s, q]) => (
                         <span
                           key={s}
-                          className={`rounded-full px-2 py-0.5 font-bold ${
-                            Number(q) <= 0
-                              ? "bg-red-50 text-red-600 ring-1 ring-red-200"
-                              : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                          }`}
+                          className={`rounded-full px-2 py-0.5 font-bold ${Number(q) <= 0 ? "bg-red-50 text-red-600 ring-1 ring-red-200" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"}`}
                         >
                           {s}: {Number(q)}
                         </span>
@@ -4930,7 +3997,6 @@ function AdminProducts() {
                     </div>
                   )}
                 </div>
-
                 <button
                   className="btn outline"
                   onClick={() => startEdit(p)}
@@ -4938,26 +4004,21 @@ function AdminProducts() {
                 >
                   <Pencil size={14} /> Edit
                 </button>
-
                 <button
                   className="remove"
                   type="button"
                   onClick={async () => {
                     if (!confirm("Delete " + p.title + "?")) return;
-
                     try {
                       await api("/admin/products/" + p._id, {
                         method: "DELETE",
                       });
-
                       await refresh();
                       await queryClient.invalidateQueries({
                         queryKey: ["products"],
                         refetchType: "all",
                       });
-
                       if (editingId === p._id) resetForm();
-
                       msg("Product deleted");
                     } catch (e) {
                       msg(e.message, "error");
@@ -4975,14 +4036,11 @@ function AdminProducts() {
   );
 }
 
-/* ============================================================ */
-/* Admin Banners                                                */
-/* ============================================================ */
+/* Admin Banners */
 function AdminBanners() {
   const queryClient = useQueryClient();
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
-
   const [f, setF] = useState({
     title: "",
     subtitle: "",
@@ -5013,10 +4071,8 @@ function AdminBanners() {
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
-
     try {
       let imageUrl = f.imageUrl.trim();
-
       if (file) {
         imageUrl = (
           await api("/uploads/image", {
@@ -5027,11 +4083,8 @@ function AdminBanners() {
           })
         ).imageUrl;
       }
-
-      if (!imageUrl) {
+      if (!imageUrl)
         throw new Error("Please upload an image or paste an image URL.");
-      }
-
       await api("/admin/banners", {
         method: "POST",
         body: JSON.stringify({
@@ -5044,7 +4097,6 @@ function AdminBanners() {
           active: true,
         }),
       });
-
       setF({
         title: "",
         subtitle: "",
@@ -5054,7 +4106,6 @@ function AdminBanners() {
         sortOrder: "0",
       });
       setFile(null);
-
       await refresh();
       msg("Banner added");
     } catch (e) {
@@ -5069,12 +4120,10 @@ function AdminBanners() {
       <Heading
         tag="HOMEPAGE EDITOR"
         title="Banners."
-        desc="Manage the homepage carousel images. Only an image is required — heading and subheading are optional."
+        desc="Manage the homepage carousel images. Only an image is required."
       />
-
       <form className="box stack" onSubmit={submit}>
         <h2>Add banner</h2>
-
         <div className="formgrid">
           <label className="span">
             Upload banner image <span className="text-orange-600">*</span>
@@ -5085,7 +4134,6 @@ function AdminBanners() {
             />
             {file && <small className="text-green-600">✓ {file.name}</small>}
           </label>
-
           <label className="span">
             Or paste image URL{" "}
             <span className="font-normal text-neutral-400">
@@ -5097,7 +4145,6 @@ function AdminBanners() {
               placeholder="https://example.com/banner.jpg"
             />
           </label>
-
           <label>
             Headline{" "}
             <span className="font-normal text-neutral-400">(optional)</span>
@@ -5107,7 +4154,6 @@ function AdminBanners() {
               placeholder="Leave empty to hide"
             />
           </label>
-
           <label>
             Subheading{" "}
             <span className="font-normal text-neutral-400">(optional)</span>
@@ -5117,7 +4163,6 @@ function AdminBanners() {
               placeholder="Leave empty to hide"
             />
           </label>
-
           <label>
             Button text
             <input
@@ -5125,7 +4170,6 @@ function AdminBanners() {
               onChange={(e) => setF({ ...f, buttonText: e.target.value })}
             />
           </label>
-
           <label>
             Button link
             <input
@@ -5133,7 +4177,6 @@ function AdminBanners() {
               onChange={(e) => setF({ ...f, buttonLink: e.target.value })}
             />
           </label>
-
           <label>
             Sort order
             <input
@@ -5143,7 +4186,6 @@ function AdminBanners() {
             />
           </label>
         </div>
-
         <button className="btn orange" disabled={busy}>
           {busy ? (
             <>
@@ -5156,7 +4198,6 @@ function AdminBanners() {
           )}
         </button>
       </form>
-
       {loading ? (
         <Loader text="Loading banners" />
       ) : (
@@ -5171,11 +4212,9 @@ function AdminBanners() {
               <RefreshCw size={14} /> Refresh
             </button>
           </div>
-
           {items.map((b) => (
             <div className="bannerrow" key={b._id}>
               <img src={b.imageUrl} alt={b.title || "Banner"} />
-
               <div>
                 <b>{b.title || "Untitled banner"}</b>
                 <p>{b.subtitle || "—"}</p>
@@ -5183,15 +4222,12 @@ function AdminBanners() {
                   className="btn outline"
                   onClick={async () => {
                     const imageUrl = prompt("New banner image URL", b.imageUrl);
-
                     if (!imageUrl) return;
-
                     try {
                       await api("/admin/banners/" + b._id, {
                         method: "PATCH",
                         body: JSON.stringify({ imageUrl }),
                       });
-
                       await refresh();
                       msg("Banner image updated");
                     } catch (e) {
@@ -5208,7 +4244,6 @@ function AdminBanners() {
                       method: "PATCH",
                       body: JSON.stringify({ active: !b.active }),
                     });
-
                     await refresh();
                   }}
                 >
@@ -5221,7 +4256,6 @@ function AdminBanners() {
                       await api("/admin/banners/" + b._id, {
                         method: "DELETE",
                       });
-
                       await refresh();
                     }
                   }}
@@ -5236,13 +4270,9 @@ function AdminBanners() {
     </section>
   );
 }
-
-/* ============================================================ */
-/* New Orders                                                   */
-/* ============================================================ */
+/* New Orders */
 function NewOrders() {
   const queryClient = useQueryClient();
-
   const {
     data: items = [],
     isLoading: loading,
@@ -5265,9 +4295,7 @@ function NewOrders() {
         method: "PATCH",
         body: JSON.stringify({ status: nextStatus }),
       });
-
       msg(`Order marked as ${nextStatus}`);
-
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: orderKeys.newOrders,
@@ -5282,7 +4310,6 @@ function NewOrders() {
           refetchType: "all",
         }),
       ]);
-
       broadcastOrderChange("status-changed", {
         orderId: id,
         status: nextStatus,
@@ -5303,14 +4330,12 @@ function NewOrders() {
             New Orders
           </h1>
           <p className="mt-1 text-sm text-neutral-500">
-            New orders waiting to be processed. Process/cancel and they'll move
-            to the Orders page.
+            New orders waiting to be processed.
           </p>
           <p className="mt-1 text-[11px] font-bold text-emerald-600">
             ● Live — updates every 3 seconds
           </p>
         </div>
-
         <button
           type="button"
           onClick={() => refetch()}
@@ -5321,13 +4346,11 @@ function NewOrders() {
           {refreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
-
       {errorMsg && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {errorMsg}
         </div>
       )}
-
       {loading ? (
         <div className="rounded-2xl border border-neutral-200 bg-white">
           <Loader text="Loading new orders" />
@@ -5341,7 +4364,7 @@ function NewOrders() {
             All caught up!
           </h3>
           <p className="mt-1 text-sm text-neutral-500">
-            No new orders waiting. New orders will appear here automatically.
+            No new orders waiting.
           </p>
         </div>
       ) : (
@@ -5392,7 +4415,6 @@ function NewOrders() {
                     )}
                   </div>
                 </div>
-
                 <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
                   <div className="text-right">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
@@ -5404,7 +4426,6 @@ function NewOrders() {
                   </div>
                 </div>
               </div>
-
               <div className="p-4 sm:p-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
@@ -5433,7 +4454,6 @@ function NewOrders() {
                       </p>
                     )}
                   </div>
-
                   <div>
                     <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
                       Items ({o.items?.length || 0})
@@ -5455,7 +4475,6 @@ function NewOrders() {
                     </ul>
                   </div>
                 </div>
-
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -5495,9 +4514,7 @@ function NewOrders() {
   );
 }
 
-/* ============================================================ */
-/* Admin Orders                                                 */
-/* ============================================================ */
+/* Admin Orders */
 const ORDER_STATUS_META = {
   pending: {
     label: "Pending",
@@ -5550,10 +4567,7 @@ const PAYMENT_STATUS_META = {
     label: "Verified",
     color: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   },
-  rejected: {
-    label: "Rejected",
-    color: "bg-red-50 text-red-700 ring-red-200",
-  },
+  rejected: { label: "Rejected", color: "bg-red-50 text-red-700 ring-red-200" },
 };
 
 function OrderDiscountEditor({ order, onUpdated }) {
@@ -5586,11 +4600,11 @@ function OrderDiscountEditor({ order, onUpdated }) {
     try {
       await api(`/admin/orders/${order._id}/discount`, {
         method: "PATCH",
-        body: {
+        body: JSON.stringify({
           discountType: type,
           discountValue: type === "none" ? 0 : Number(value),
           discountNote: note,
-        },
+        }),
       });
       msg("Order discount updated");
       await onUpdated?.();
@@ -5666,6 +4680,750 @@ function OrderDiscountEditor({ order, onUpdated }) {
   );
 }
 
+function AdminOrders() {
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("all");
+  const [query, setQuery] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+
+  const {
+    data: items = [],
+    isLoading: loading,
+    isFetching: refreshing,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: orderKeys.adminList,
+    queryFn: () => apiFetch("/admin/orders"),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+  });
+
+  const errorMsg = error?.message || "";
+
+  async function refresh(showSpinner = false) {
+    if (showSpinner) await refetch();
+    else
+      await queryClient.invalidateQueries({
+        queryKey: orderKeys.adminList,
+        refetchType: "all",
+      });
+  }
+
+  async function update(id, patch) {
+    try {
+      await api("/admin/orders/" + id, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      msg("Order updated");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.newOrders,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
+      broadcastOrderChange("status-changed", { orderId: id, patch });
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+
+  async function updateDeliveryCharge(id, newCharge) {
+    const val = Math.max(0, Number(newCharge) || 0);
+    try {
+      await api(`/admin/orders/${id}/delivery-charge`, {
+        method: "PATCH",
+        body: JSON.stringify({ deliveryCharge: val }),
+      });
+      msg("Delivery charge updated");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
+      broadcastOrderChange("status-changed", { orderId: id });
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+
+  async function deleteOrder(id, orderNumber) {
+    const result = await Swal.fire({
+      title: "Delete this order?",
+      html: `Order <b>${orderNumber}</b> permanently delete হবে।<br/><span style="color:#dc2626;font-size:13px;">এই কাজটি undo করা যাবে না।</span>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Yes, delete it",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await api(`/admin/orders/${id}`, { method: "DELETE" });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.adminList,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orderKeys.newOrders,
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["orders"],
+          refetchType: "all",
+        }),
+      ]);
+      broadcastOrderChange("deleted", { orderId: id });
+      if (expandedId === id) setExpandedId(null);
+      msg("Order deleted successfully");
+    } catch (e) {
+      msg(e.message, "error");
+    }
+  }
+
+  const stats = useMemo(() => {
+    const total = items.length;
+    const pending = items.filter((o) => o.status === "pending").length;
+    const processing = items.filter((o) =>
+      ["confirmed", "processing", "shipped"].includes(o.status),
+    ).length;
+    const delivered = items.filter((o) => o.status === "delivered").length;
+    const cancelled = items.filter((o) => o.status === "cancelled").length;
+    const totalRevenue = items
+      .filter((o) => o.status !== "cancelled")
+      .reduce((s, o) => s + Number(o.total || 0), 0);
+    const successRevenue = items
+      .filter((o) => o.status === "delivered")
+      .reduce((s, o) => s + Number(o.total || 0), 0);
+    const pendingPayment = items.filter(
+      (o) => o.paymentStatus === "pending_verification",
+    ).length;
+    return {
+      total,
+      pending,
+      processing,
+      delivered,
+      cancelled,
+      totalRevenue,
+      successRevenue,
+      pendingPayment,
+    };
+  }, [items]);
+
+  const tabs = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "pending", label: "Pending", count: stats.pending },
+    { id: "active", label: "Active", count: stats.processing },
+    { id: "delivered", label: "Delivered", count: stats.delivered },
+    { id: "cancelled", label: "Cancelled", count: stats.cancelled },
+    { id: "payment_due", label: "Payment due", count: stats.pendingPayment },
+  ];
+
+  const filtered = useMemo(() => {
+    let list = items;
+    if (activeTab === "pending")
+      list = list.filter((o) => o.status === "pending");
+    else if (activeTab === "active")
+      list = list.filter((o) =>
+        ["confirmed", "processing", "shipped"].includes(o.status),
+      );
+    else if (activeTab === "delivered")
+      list = list.filter((o) => o.status === "delivered");
+    else if (activeTab === "cancelled")
+      list = list.filter((o) => o.status === "cancelled");
+    else if (activeTab === "payment_due")
+      list = list.filter((o) => o.paymentStatus === "pending_verification");
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (o) =>
+          String(o.orderNumber || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(o.customerName || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(o.phone || "")
+            .toLowerCase()
+            .includes(q),
+      );
+    }
+    return list;
+  }, [items, activeTab, query]);
+
+  return (
+    <section className="adminmain">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-orange-600">
+            FULFILMENT
+          </span>
+          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-900 sm:text-4xl">
+            Orders
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Manage deliveries, verify payments and keep customers happy.
+          </p>
+          <p className="mt-1 text-[11px] font-bold text-emerald-600">
+            ● Live — updates every 5 seconds
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => refresh(true)}
+          disabled={refreshing}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
+        >
+          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-4 ring-1 ring-inset ring-orange-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-orange-700">
+                Total order revenue
+              </p>
+              <p className="mt-1 text-2xl font-black text-orange-900 tabular-nums sm:text-3xl">
+                {money(stats.totalRevenue)}
+              </p>
+              <p className="mt-1 text-[11px] text-orange-700/70">
+                All orders excluding cancelled ({stats.total - stats.cancelled}{" "}
+                orders)
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm">
+              <Wallet size={22} />
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 ring-1 ring-inset ring-emerald-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">
+                Total success revenue
+              </p>
+              <p className="mt-1 text-2xl font-black text-emerald-900 tabular-nums sm:text-3xl">
+                {money(stats.successRevenue)}
+              </p>
+              <p className="mt-1 text-[11px] text-emerald-700/70">
+                Delivered orders only ({stats.delivered} orders)
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
+              <TrendingUp size={22} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard
+          label="Total orders"
+          value={stats.total}
+          tone="neutral"
+          icon={Package}
+        />
+        <StatCard
+          label="Pending"
+          value={stats.pending}
+          tone="amber"
+          icon={Clock}
+        />
+        <StatCard
+          label="Active"
+          value={stats.processing}
+          tone="violet"
+          icon={Truck}
+        />
+        <StatCard
+          label="Delivered"
+          value={stats.delivered}
+          tone="emerald"
+          icon={CheckCircle2}
+        />
+        <StatCard
+          label="Cancelled"
+          value={stats.cancelled}
+          tone="red"
+          icon={XCircle}
+        />
+        <StatCard
+          label="Payment due"
+          value={stats.pendingPayment}
+          tone="red"
+          icon={CreditCard}
+        />
+      </div>
+
+      {errorMsg && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMsg}
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:p-4">
+        <div className="-mx-1 flex flex-1 gap-1.5 overflow-x-auto px-1">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${activeTab === t.id ? "bg-neutral-950 text-white" : "bg-neutral-50 text-neutral-600 hover:bg-neutral-100"}`}
+            >
+              {t.label}
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${activeTab === t.id ? "bg-white/20 text-white" : "bg-white text-neutral-500"}`}
+              >
+                {t.count}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-neutral-50 px-3 transition focus-within:ring-2 focus-within:ring-orange-400 sm:max-w-xs">
+          <Search size={16} className="shrink-0 text-neutral-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search order, name, phone..."
+            className="w-full min-w-0 bg-transparent py-2 text-sm outline-none placeholder:text-neutral-400"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="shrink-0 text-[11px] font-bold text-neutral-500 hover:text-orange-600"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl border border-neutral-200 bg-white">
+          <Loader text="Loading orders" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+            <Package size={26} />
+          </div>
+          <h3 className="mt-4 text-lg font-extrabold text-neutral-900">
+            No orders found
+          </h3>
+          <p className="mt-1 text-sm text-neutral-500">
+            {query
+              ? "Try a different search term or clear filters."
+              : "New orders will appear here as they come in."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((o) => {
+            const statusMeta =
+              ORDER_STATUS_META[o.status] || ORDER_STATUS_META.pending;
+            const paymentMeta =
+              PAYMENT_STATUS_META[o.paymentStatus] ||
+              PAYMENT_STATUS_META.not_required;
+            const StatusIcon = statusMeta.icon;
+            const expanded = expandedId === o._id;
+            const zone = o.deliveryZone;
+            return (
+              <article
+                key={o._id}
+                className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition hover:border-neutral-300"
+              >
+                <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-white">
+                      <StatusIcon size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-neutral-500 sm:text-sm">
+                          {o.orderNumber}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${statusMeta.color}`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`}
+                          />
+                          {statusMeta.label}
+                        </span>
+                        {o.paymentStatus !== "not_required" && (
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
+                          >
+                            {paymentMeta.label}
+                          </span>
+                        )}
+                        {zone && ZONE_LABELS[zone] && (
+                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 ring-1 ring-blue-200">
+                            {ZONE_LABELS[zone]}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-sm font-extrabold text-neutral-900 sm:text-base">
+                        {o.customerName}
+                      </p>
+                      {o.createdAt && (
+                        <p className="text-xs text-neutral-400">
+                          {new Date(o.createdAt).toLocaleString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                        Total
+                      </p>
+                      <p className="text-lg font-black text-neutral-900 tabular-nums">
+                        {money(o.total)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expanded ? null : o._id)}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-200 text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
+                      aria-expanded={expanded}
+                      aria-label={expanded ? "Collapse" : "Expand"}
+                    >
+                      {expanded ? (
+                        <ChevronUp size={18} />
+                      ) : (
+                        <ChevronDown size={18} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                {expanded && (
+                  <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-2">
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Customer
+                        </h4>
+                        <div className="space-y-1.5 text-sm">
+                          <p className="flex items-center gap-2 text-neutral-700">
+                            <UserRound
+                              size={14}
+                              className="shrink-0 text-neutral-400"
+                            />
+                            <span className="font-semibold text-neutral-900">
+                              {o.customerName}
+                            </span>
+                          </p>
+                          <p className="flex items-center gap-2 text-neutral-700">
+                            <Phone
+                              size={14}
+                              className="shrink-0 text-neutral-400"
+                            />
+                            <a
+                              href={`tel:${o.phone}`}
+                              className="font-mono hover:text-orange-600"
+                            >
+                              {o.phone}
+                            </a>
+                          </p>
+                          {(o.address || o.city) && (
+                            <p className="flex items-start gap-2 text-neutral-700">
+                              <MapPin
+                                size={14}
+                                className="mt-0.5 shrink-0 text-neutral-400"
+                              />
+                              <span>
+                                {o.address}
+                                {o.city ? `, ${o.city}` : ""}
+                              </span>
+                            </p>
+                          )}
+                          {zone && ZONE_LABELS[zone] && (
+                            <p className="flex items-center gap-2 text-neutral-700">
+                              <Truck
+                                size={14}
+                                className="shrink-0 text-neutral-400"
+                              />
+                              <span className="text-xs font-bold text-blue-700">
+                                {ZONE_LABELS[zone]}
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Items ({o.items?.length || 0})
+                        </h4>
+                        <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-200">
+                          {(o.items || []).map((it, n) => (
+                            <div
+                              key={n}
+                              className="flex items-center gap-3 p-2.5 text-sm"
+                            >
+                              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                                <img
+                                  src={
+                                    it.image ||
+                                    "https://placehold.co/80x80?text=Item"
+                                  }
+                                  alt={it.title}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-semibold text-neutral-900">
+                                  {it.title}
+                                </p>
+                                <p className="text-xs text-neutral-500">
+                                  Qty {it.quantity}
+                                  {it.size ? (
+                                    <>
+                                      {` · `}
+                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+                                        Size: {it.size}
+                                      </span>
+                                    </>
+                                  ) : null}{" "}
+                                  · {money(it.price)} each
+                                </p>
+                              </div>
+                              <p className="shrink-0 font-bold text-neutral-900 tabular-nums">
+                                {money(
+                                  Number(it.price || 0) *
+                                    Number(it.quantity || 1),
+                                )}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 space-y-1 rounded-xl bg-neutral-50 p-3 text-sm">
+                          <div className="flex justify-between text-neutral-600">
+                            <span>Subtotal</span>
+                            <span className="tabular-nums">
+                              {money(o.subtotal)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-neutral-600">
+                            <span>Delivery</span>
+                            <span className="tabular-nums">
+                              {money(o.deliveryCharge)}
+                            </span>
+                          </div>
+                          {Number(o.discountAmount || 0) > 0 && (
+                            <div className="flex justify-between text-emerald-700">
+                              <span>
+                                Admin discount{" "}
+                                {o.discountNote ? `(${o.discountNote})` : ""}
+                              </span>
+                              <span className="tabular-nums">
+                                −{money(o.discountAmount)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between border-t border-neutral-200 pt-1.5 font-black text-neutral-900">
+                            <span>Total</span>
+                            <span className="tabular-nums">
+                              {money(o.total)}
+                            </span>
+                          </div>
+                        </div>
+                        <OrderDiscountEditor
+                          order={o}
+                          onUpdated={() => refresh(true)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Payment
+                        </h4>
+                        <div className="rounded-xl border border-neutral-200 p-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-neutral-500">Method</span>
+                            <span className="font-semibold capitalize">
+                              {o.paymentMethod || "—"}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between">
+                            <span className="text-neutral-500">
+                              Transaction ID
+                            </span>
+                            <span className="font-mono text-xs">
+                              {o.transactionId || "—"}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between">
+                            <span className="text-neutral-500">Status</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
+                            >
+                              {paymentMeta.label}
+                            </span>
+                          </div>
+                          {o.paymentScreenshot && (
+                            <a
+                              href={o.paymentScreenshot}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:underline"
+                            >
+                              <ImageIcon size={12} /> View screenshot ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Delivery charge (override)
+                        </h4>
+                        <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3">
+                          <p className="mb-2 text-xs text-neutral-700">
+                            Current:{" "}
+                            <b className="text-orange-700">
+                              {money(o.deliveryCharge)}
+                            </b>
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              defaultValue={o.deliveryCharge}
+                              onBlur={(e) => {
+                                const val = Number(e.target.value);
+                                if (val !== o.deliveryCharge)
+                                  updateDeliveryCharge(o._id, val);
+                              }}
+                              className="min-h-10 w-24 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-bold outline-none focus:border-orange-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateDeliveryCharge(o._id, 0)}
+                              className="min-h-10 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
+                            >
+                              Make Free
+                            </button>
+                          </div>
+                          <p className="mt-2 text-[10px] text-neutral-500">
+                            পরিবর্তন করলে customer-এর total automatically update
+                            হবে।
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                          Update status
+                        </h4>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-neutral-600">
+                              Order status
+                            </span>
+                            <select
+                              value={o.status}
+                              onChange={(e) =>
+                                update(o._id, { status: e.target.value })
+                              }
+                              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                            >
+                              {[
+                                "pending",
+                                "confirmed",
+                                "processing",
+                                "shipped",
+                                "delivered",
+                                "cancelled",
+                              ].map((s) => (
+                                <option key={s} value={s}>
+                                  {ORDER_STATUS_META[s]?.label || s}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-neutral-600">
+                              Payment status
+                            </span>
+                            <select
+                              value={o.paymentStatus}
+                              onChange={(e) =>
+                                update(o._id, { paymentStatus: e.target.value })
+                              }
+                              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                            >
+                              {[
+                                "not_required",
+                                "pending_verification",
+                                "verified",
+                                "rejected",
+                              ].map((s) => (
+                                <option key={s} value={s}>
+                                  {PAYMENT_STATUS_META[s]?.label || s}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-3">
+                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-red-700">
+                          Danger zone
+                        </h4>
+                        <p className="mb-2 text-xs text-neutral-700">
+                          Order permanently delete করলে আর recover করা যাবে না।
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => deleteOrder(o._id, o.orderNumber)}
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700"
+                        >
+                          <Trash2 size={14} /> Delete this order
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
 function AdminHomepageSections() {
   const qc = useQueryClient();
   const { data: sections = [], isLoading } = useQuery({
@@ -5692,6 +5450,7 @@ function AdminHomepageSections() {
   const [editing, setEditing] = useState("");
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm((old) => ({ ...old, [k]: v }));
+
   function edit(s) {
     setEditing(s._id);
     setForm({
@@ -5702,6 +5461,7 @@ function AdminHomepageSections() {
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
   async function save(e) {
     e.preventDefault();
     setSaving(true);
@@ -5710,7 +5470,10 @@ function AdminHomepageSections() {
         editing
           ? `/admin/homepage/sections/${editing}`
           : "/admin/homepage/sections",
-        { method: editing ? "PATCH" : "POST", body: form },
+        {
+          method: editing ? "PATCH" : "POST",
+          body: form,
+        },
       );
       await qc.invalidateQueries({ queryKey: ["admin-home-sections"] });
       setForm(blank);
@@ -5722,6 +5485,7 @@ function AdminHomepageSections() {
       setSaving(false);
     }
   }
+
   async function remove(id) {
     const ok = await Swal.fire({
       title: "Delete section?",
@@ -5738,6 +5502,7 @@ function AdminHomepageSections() {
       msg(e.message, "error");
     }
   }
+
   return (
     <section className="adminmain">
       <Heading
@@ -5879,7 +5644,7 @@ function AdminHomepageSections() {
             type="checkbox"
             checked={form.active}
             onChange={(e) => set("active", e.target.checked)}
-          />
+          />{" "}
           Visible on homepage
         </label>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -5965,6 +5730,7 @@ function AdminPages() {
   const [editing, setEditing] = useState("");
   const [saving, setSaving] = useState(false);
   const change = (k, v) => setForm((old) => ({ ...old, [k]: v }));
+
   function edit(p) {
     setEditing(p._id);
     setForm({
@@ -5975,6 +5741,7 @@ function AdminPages() {
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
   async function save(e) {
     e.preventDefault();
     setSaving(true);
@@ -5993,6 +5760,7 @@ function AdminPages() {
       setSaving(false);
     }
   }
+
   async function remove(id) {
     const ok = await Swal.fire({
       title: "Delete this page?",
@@ -6010,6 +5778,7 @@ function AdminPages() {
       msg(e.message, "error");
     }
   }
+
   return (
     <section className="adminmain">
       <Heading
@@ -6070,7 +5839,7 @@ function AdminPages() {
             type="checkbox"
             checked={form.published}
             onChange={(e) => change("published", e.target.checked)}
-          />
+          />{" "}
           Published
         </label>
         <div className="flex gap-2">
@@ -6144,6 +5913,7 @@ function DynamicPage() {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   useEffect(() => {
     let live = true;
     api(`/pages/${encodeURIComponent(slug)}`, { auth: false })
@@ -6160,6 +5930,7 @@ function DynamicPage() {
       live = false;
     };
   }, [slug]);
+
   if (loading)
     return (
       <main className="wrap page">
@@ -6167,6 +5938,7 @@ function DynamicPage() {
       </main>
     );
   if (error || !page) return <NotFound />;
+
   return (
     <main className="wrap page">
       <article className="mx-auto max-w-4xl rounded-2xl border border-neutral-200 bg-white p-5 sm:p-9">
@@ -6182,803 +5954,10 @@ function DynamicPage() {
   );
 }
 
-function AdminOrders() {
-  const queryClient = useQueryClient();
-
-  const [activeTab, setActiveTab] = useState("all");
-  const [query, setQuery] = useState("");
-  const [expandedId, setExpandedId] = useState(null);
-
-  const {
-    data: items = [],
-    isLoading: loading,
-    isFetching: refreshing,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: orderKeys.adminList,
-    queryFn: () => apiFetch("/admin/orders"),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
-    staleTime: 0,
-  });
-
-  const errorMsg = error?.message || "";
-
-  async function refresh(showSpinner = false) {
-    if (showSpinner) {
-      await refetch();
-    } else {
-      await queryClient.invalidateQueries({
-        queryKey: orderKeys.adminList,
-        refetchType: "all",
-      });
-    }
-  }
-
-  async function update(id, patch) {
-    try {
-      await api("/admin/orders/" + id, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      });
-      msg("Order updated");
-
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: orderKeys.adminList,
-          refetchType: "all",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: orderKeys.newOrders,
-          refetchType: "all",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["orders"],
-          refetchType: "all",
-        }),
-      ]);
-
-      broadcastOrderChange("status-changed", { orderId: id, patch });
-    } catch (e) {
-      msg(e.message, "error");
-    }
-  }
-
-  async function updateDeliveryCharge(id, newCharge) {
-    const val = Math.max(0, Number(newCharge) || 0);
-    try {
-      await api(`/admin/orders/${id}/delivery-charge`, {
-        method: "PATCH",
-        body: JSON.stringify({ deliveryCharge: val }),
-      });
-      msg("Delivery charge updated");
-
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: orderKeys.adminList,
-          refetchType: "all",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["orders"],
-          refetchType: "all",
-        }),
-      ]);
-
-      broadcastOrderChange("status-changed", { orderId: id });
-    } catch (e) {
-      msg(e.message, "error");
-    }
-  }
-
-  async function deleteOrder(id, orderNumber) {
-    const result = await Swal.fire({
-      title: "Delete this order?",
-      html: `Order <b>${orderNumber}</b> permanently delete হবে।<br/><span style="color:#dc2626;font-size:13px;">এই কাজটি undo করা যাবে না।</span>`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, delete it",
-      cancelButtonText: "Cancel",
-      reverseButtons: true,
-    });
-
-    if (!result.isConfirmed) return;
-
-    try {
-      await api(`/admin/orders/${id}`, { method: "DELETE" });
-
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: orderKeys.adminList,
-          refetchType: "all",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: orderKeys.newOrders,
-          refetchType: "all",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["orders"],
-          refetchType: "all",
-        }),
-      ]);
-
-      broadcastOrderChange("deleted", { orderId: id });
-
-      if (expandedId === id) setExpandedId(null);
-
-      msg("Order deleted successfully");
-    } catch (e) {
-      msg(e.message, "error");
-    }
-  }
-
-  const stats = useMemo(() => {
-    const total = items.length;
-    const pending = items.filter((o) => o.status === "pending").length;
-    const processing = items.filter((o) =>
-      ["confirmed", "processing", "shipped"].includes(o.status),
-    ).length;
-    const delivered = items.filter((o) => o.status === "delivered").length;
-    const cancelled = items.filter((o) => o.status === "cancelled").length;
-
-    const totalRevenue = items
-      .filter((o) => o.status !== "cancelled")
-      .reduce((s, o) => s + Number(o.total || 0), 0);
-
-    const successRevenue = items
-      .filter((o) => o.status === "delivered")
-      .reduce((s, o) => s + Number(o.total || 0), 0);
-
-    const pendingPayment = items.filter(
-      (o) => o.paymentStatus === "pending_verification",
-    ).length;
-
-    return {
-      total,
-      pending,
-      processing,
-      delivered,
-      cancelled,
-      totalRevenue,
-      successRevenue,
-      pendingPayment,
-    };
-  }, [items]);
-
-  const tabs = [
-    { id: "all", label: "All", count: stats.total },
-    { id: "pending", label: "Pending", count: stats.pending },
-    { id: "active", label: "Active", count: stats.processing },
-    { id: "delivered", label: "Delivered", count: stats.delivered },
-    { id: "cancelled", label: "Cancelled", count: stats.cancelled },
-    {
-      id: "payment_due",
-      label: "Payment due",
-      count: stats.pendingPayment,
-    },
-  ];
-
-  const filtered = useMemo(() => {
-    let list = items;
-
-    if (activeTab === "pending")
-      list = list.filter((o) => o.status === "pending");
-    else if (activeTab === "active")
-      list = list.filter((o) =>
-        ["confirmed", "processing", "shipped"].includes(o.status),
-      );
-    else if (activeTab === "delivered")
-      list = list.filter((o) => o.status === "delivered");
-    else if (activeTab === "cancelled")
-      list = list.filter((o) => o.status === "cancelled");
-    else if (activeTab === "payment_due")
-      list = list.filter((o) => o.paymentStatus === "pending_verification");
-
-    const q = query.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (o) =>
-          String(o.orderNumber || "")
-            .toLowerCase()
-            .includes(q) ||
-          String(o.customerName || "")
-            .toLowerCase()
-            .includes(q) ||
-          String(o.phone || "")
-            .toLowerCase()
-            .includes(q),
-      );
-    }
-
-    return list;
-  }, [items, activeTab, query]);
-
-  return (
-    <section className="adminmain">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-orange-600">
-            FULFILMENT
-          </span>
-          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-900 sm:text-4xl">
-            Orders
-          </h1>
-          <p className="mt-1 text-sm text-neutral-500">
-            Manage deliveries, verify payments and keep customers happy.
-          </p>
-          <p className="mt-1 text-[11px] font-bold text-emerald-600">
-            ● Live — updates every 5 seconds
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => refresh(true)}
-          disabled={refreshing}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
-        >
-          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
-      </div>
-
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-4 ring-1 ring-inset ring-orange-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-orange-700">
-                Total order revenue
-              </p>
-              <p className="mt-1 text-2xl font-black text-orange-900 tabular-nums sm:text-3xl">
-                {money(stats.totalRevenue)}
-              </p>
-              <p className="mt-1 text-[11px] text-orange-700/70">
-                All orders excluding cancelled ({stats.total - stats.cancelled}{" "}
-                orders)
-              </p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm">
-              <Wallet size={22} />
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 ring-1 ring-inset ring-emerald-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">
-                Total success revenue
-              </p>
-              <p className="mt-1 text-2xl font-black text-emerald-900 tabular-nums sm:text-3xl">
-                {money(stats.successRevenue)}
-              </p>
-              <p className="mt-1 text-[11px] text-emerald-700/70">
-                Delivered orders only ({stats.delivered} orders)
-              </p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
-              <TrendingUp size={22} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard
-          label="Total orders"
-          value={stats.total}
-          tone="neutral"
-          icon={Package}
-        />
-        <StatCard
-          label="Pending"
-          value={stats.pending}
-          tone="amber"
-          icon={Clock}
-        />
-        <StatCard
-          label="Active"
-          value={stats.processing}
-          tone="violet"
-          icon={Truck}
-        />
-        <StatCard
-          label="Delivered"
-          value={stats.delivered}
-          tone="emerald"
-          icon={CheckCircle2}
-        />
-        <StatCard
-          label="Cancelled"
-          value={stats.cancelled}
-          tone="red"
-          icon={XCircle}
-        />
-        <StatCard
-          label="Payment due"
-          value={stats.pendingPayment}
-          tone="red"
-          icon={CreditCard}
-        />
-      </div>
-
-      {errorMsg && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMsg}
-        </div>
-      )}
-
-      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:p-4">
-        <div className="-mx-1 flex flex-1 gap-1.5 overflow-x-auto px-1">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setActiveTab(t.id)}
-              className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                activeTab === t.id
-                  ? "bg-neutral-950 text-white"
-                  : "bg-neutral-50 text-neutral-600 hover:bg-neutral-100"
-              }`}
-            >
-              {t.label}
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-                  activeTab === t.id
-                    ? "bg-white/20 text-white"
-                    : "bg-white text-neutral-500"
-                }`}
-              >
-                {t.count}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-neutral-50 px-3 transition focus-within:ring-2 focus-within:ring-orange-400 sm:max-w-xs">
-          <Search size={16} className="shrink-0 text-neutral-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search order, name, phone..."
-            className="w-full min-w-0 bg-transparent py-2 text-sm outline-none placeholder:text-neutral-400"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="shrink-0 text-[11px] font-bold text-neutral-500 hover:text-orange-600"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="rounded-2xl border border-neutral-200 bg-white">
-          <Loader text="Loading orders" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 text-orange-500">
-            <Package size={26} />
-          </div>
-          <h3 className="mt-4 text-lg font-extrabold text-neutral-900">
-            No orders found
-          </h3>
-          <p className="mt-1 text-sm text-neutral-500">
-            {query
-              ? "Try a different search term or clear filters."
-              : "New orders will appear here as they come in."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((o) => {
-            const statusMeta =
-              ORDER_STATUS_META[o.status] || ORDER_STATUS_META.pending;
-            const paymentMeta =
-              PAYMENT_STATUS_META[o.paymentStatus] ||
-              PAYMENT_STATUS_META.not_required;
-            const StatusIcon = statusMeta.icon;
-            const expanded = expandedId === o._id;
-            const zone = o.deliveryZone;
-
-            return (
-              <article
-                key={o._id}
-                className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition hover:border-neutral-300"
-              >
-                <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-white">
-                      <StatusIcon size={20} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-neutral-500 sm:text-sm">
-                          {o.orderNumber}
-                        </span>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${statusMeta.color}`}
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`}
-                          />
-                          {statusMeta.label}
-                        </span>
-                        {o.paymentStatus !== "not_required" && (
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
-                          >
-                            {paymentMeta.label}
-                          </span>
-                        )}
-                        {zone && ZONE_LABELS[zone] && (
-                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 ring-1 ring-blue-200">
-                            {ZONE_LABELS[zone]}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 truncate text-sm font-extrabold text-neutral-900 sm:text-base">
-                        {o.customerName}
-                      </p>
-                      {o.createdAt && (
-                        <p className="text-xs text-neutral-400">
-                          {new Date(o.createdAt).toLocaleString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                        Total
-                      </p>
-                      <p className="text-lg font-black text-neutral-900 tabular-nums">
-                        {money(o.total)}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedId(expanded ? null : o._id)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-200 text-neutral-600 transition hover:border-orange-400 hover:text-orange-600"
-                      aria-expanded={expanded}
-                      aria-label={expanded ? "Collapse" : "Expand"}
-                    >
-                      {expanded ? (
-                        <ChevronUp size={18} />
-                      ) : (
-                        <ChevronDown size={18} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {expanded && (
-                  <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-2">
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Customer
-                        </h4>
-                        <div className="space-y-1.5 text-sm">
-                          <p className="flex items-center gap-2 text-neutral-700">
-                            <UserRound
-                              size={14}
-                              className="shrink-0 text-neutral-400"
-                            />
-                            <span className="font-semibold text-neutral-900">
-                              {o.customerName}
-                            </span>
-                          </p>
-                          <p className="flex items-center gap-2 text-neutral-700">
-                            <Phone
-                              size={14}
-                              className="shrink-0 text-neutral-400"
-                            />
-                            <a
-                              href={`tel:${o.phone}`}
-                              className="font-mono hover:text-orange-600"
-                            >
-                              {o.phone}
-                            </a>
-                          </p>
-                          {(o.address || o.city) && (
-                            <p className="flex items-start gap-2 text-neutral-700">
-                              <MapPin
-                                size={14}
-                                className="mt-0.5 shrink-0 text-neutral-400"
-                              />
-                              <span>
-                                {o.address}
-                                {o.city ? `, ${o.city}` : ""}
-                              </span>
-                            </p>
-                          )}
-                          {zone && ZONE_LABELS[zone] && (
-                            <p className="flex items-center gap-2 text-neutral-700">
-                              <Truck
-                                size={14}
-                                className="shrink-0 text-neutral-400"
-                              />
-                              <span className="text-xs font-bold text-blue-700">
-                                {ZONE_LABELS[zone]}
-                              </span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Items ({o.items?.length || 0})
-                        </h4>
-                        <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-200">
-                          {(o.items || []).map((it, n) => (
-                            <div
-                              key={n}
-                              className="flex items-center gap-3 p-2.5 text-sm"
-                            >
-                              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
-                                <img
-                                  src={
-                                    it.image ||
-                                    "https://placehold.co/80x80?text=Item"
-                                  }
-                                  alt={it.title}
-                                  className="h-full w-full object-cover"
-                                />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate font-semibold text-neutral-900">
-                                  {it.title}
-                                </p>
-                                <p className="text-xs text-neutral-500">
-                                  Qty {it.quantity}
-                                  {it.size ? (
-                                    <>
-                                      {" · "}
-                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
-                                        Size: {it.size}
-                                      </span>
-                                    </>
-                                  ) : null}{" "}
-                                  · {money(it.price)} each
-                                </p>
-                              </div>
-                              <p className="shrink-0 font-bold text-neutral-900 tabular-nums">
-                                {money(
-                                  Number(it.price || 0) *
-                                    Number(it.quantity || 1),
-                                )}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="mt-3 space-y-1 rounded-xl bg-neutral-50 p-3 text-sm">
-                          <div className="flex justify-between text-neutral-600">
-                            <span>Subtotal</span>
-                            <span className="tabular-nums">
-                              {money(o.subtotal)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-neutral-600">
-                            <span>Delivery</span>
-                            <span className="tabular-nums">
-                              {money(o.deliveryCharge)}
-                            </span>
-                          </div>
-                          {Number(o.discountAmount || 0) > 0 && (
-                            <div className="flex justify-between text-emerald-700">
-                              <span>
-                                Admin discount{" "}
-                                {o.discountNote ? `(${o.discountNote})` : ""}
-                              </span>
-                              <span className="tabular-nums">
-                                −{money(o.discountAmount)}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex justify-between border-t border-neutral-200 pt-1.5 font-black text-neutral-900">
-                            <span>Total</span>
-                            <span className="tabular-nums">
-                              {money(o.total)}
-                            </span>
-                          </div>
-                        </div>
-                        <OrderDiscountEditor
-                          order={o}
-                          onUpdated={() => refresh(true)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Payment
-                        </h4>
-                        <div className="rounded-xl border border-neutral-200 p-3 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-neutral-500">Method</span>
-                            <span className="font-semibold capitalize">
-                              {o.paymentMethod || "—"}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 flex items-center justify-between">
-                            <span className="text-neutral-500">
-                              Transaction ID
-                            </span>
-                            <span className="font-mono text-xs">
-                              {o.transactionId || "—"}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 flex items-center justify-between">
-                            <span className="text-neutral-500">Status</span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${paymentMeta.color}`}
-                            >
-                              {paymentMeta.label}
-                            </span>
-                          </div>
-                          {o.paymentScreenshot && (
-                            <a
-                              href={o.paymentScreenshot}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:underline"
-                            >
-                              <ImageIcon size={12} /> View screenshot ↗
-                            </a>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Delivery charge (override)
-                        </h4>
-                        <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3">
-                          <p className="mb-2 text-xs text-neutral-700">
-                            Current:{" "}
-                            <b className="text-orange-700">
-                              {money(o.deliveryCharge)}
-                            </b>
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              defaultValue={o.deliveryCharge}
-                              onBlur={(e) => {
-                                const val = Number(e.target.value);
-                                if (val !== o.deliveryCharge) {
-                                  updateDeliveryCharge(o._id, val);
-                                }
-                              }}
-                              className="min-h-10 w-24 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-bold outline-none focus:border-orange-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => updateDeliveryCharge(o._id, 0)}
-                              className="min-h-10 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
-                            >
-                              Make Free
-                            </button>
-                          </div>
-                          <p className="mt-2 text-[10px] text-neutral-500">
-                            পরিবর্তন করলে customer-এর total automatically update
-                            হবে।
-                          </p>
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Update status
-                        </h4>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <label className="block">
-                            <span className="mb-1 block text-xs font-bold text-neutral-600">
-                              Order status
-                            </span>
-                            <select
-                              value={o.status}
-                              onChange={(e) =>
-                                update(o._id, { status: e.target.value })
-                              }
-                              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                            >
-                              {[
-                                "pending",
-                                "confirmed",
-                                "processing",
-                                "shipped",
-                                "delivered",
-                                "cancelled",
-                              ].map((s) => (
-                                <option key={s} value={s}>
-                                  {ORDER_STATUS_META[s]?.label || s}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <label className="block">
-                            <span className="mb-1 block text-xs font-bold text-neutral-600">
-                              Payment status
-                            </span>
-                            <select
-                              value={o.paymentStatus}
-                              onChange={(e) =>
-                                update(o._id, {
-                                  paymentStatus: e.target.value,
-                                })
-                              }
-                              className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                            >
-                              {[
-                                "not_required",
-                                "pending_verification",
-                                "verified",
-                                "rejected",
-                              ].map((s) => (
-                                <option key={s} value={s}>
-                                  {PAYMENT_STATUS_META[s]?.label || s}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-3">
-                        <h4 className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-red-700">
-                          Danger zone
-                        </h4>
-                        <p className="mb-2 text-xs text-neutral-700">
-                          Order permanently delete করলে আর recover করা যাবে না।
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => deleteOrder(o._id, o.orderNumber)}
-                          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700"
-                        >
-                          <Trash2 size={14} /> Delete this order
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ============================================================ */
-/* Admin Delivery Settings — ২টা zone                          */
-/* ============================================================ */
 function AdminDeliverySettings() {
   const queryClient = useQueryClient();
   const [f, setF] = useState({ dhaka: "", outside: "" });
   const [busy, setBusy] = useState(false);
-
   const { data, isLoading } = useQuery({
     queryKey: ["admin-settings"],
     queryFn: () => apiFetch("/admin/settings"),
@@ -7008,7 +5987,6 @@ function AdminDeliverySettings() {
         }),
       });
       msg("Global delivery charges updated");
-
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-settings"] }),
         queryClient.invalidateQueries({ queryKey: ["settings-delivery"] }),
@@ -7025,9 +6003,8 @@ function AdminDeliverySettings() {
       <Heading
         tag="SHIPPING"
         title="Delivery settings."
-        desc="২টা zone-এর জন্য global delivery charge সেট করুন। প্রতিটা product-এ আলাদা charge থাকলে সেটা priority পাবে।"
+        desc="২টা zone-এর জন্য global delivery charge সেট করুন।"
       />
-
       {isLoading ? (
         <Loader text="Loading settings" />
       ) : (
@@ -7037,7 +6014,6 @@ function AdminDeliverySettings() {
             এই চার্জ সেইসব product-এ প্রযোজ্য হবে যেগুলোতে zone-specific charge
             সেট করা নেই (0)।
           </p>
-
           <div className="grid gap-3 sm:grid-cols-2">
             <label>
               Inside Dhaka (৳)
@@ -7049,7 +6025,6 @@ function AdminDeliverySettings() {
                 required
               />
             </label>
-
             <label>
               Outside Dhaka (৳)
               <input
@@ -7061,7 +6036,6 @@ function AdminDeliverySettings() {
               />
             </label>
           </div>
-
           <button className="btn orange" disabled={busy}>
             {busy ? (
               <>
@@ -7079,9 +6053,30 @@ function AdminDeliverySettings() {
   );
 }
 
-/* ============================================================ */
-/* Admin Reports                                                */
-/* ============================================================ */
+function StatCard({ label, value, tone = "neutral", icon: Icon }) {
+  const tones = {
+    neutral: "bg-neutral-50 text-neutral-900 ring-neutral-200",
+    amber: "bg-amber-50 text-amber-800 ring-amber-200",
+    violet: "bg-violet-50 text-violet-800 ring-violet-200",
+    emerald: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    red: "bg-red-50 text-red-800 ring-red-200",
+    orange: "bg-orange-50 text-orange-800 ring-orange-200",
+  };
+  return (
+    <div
+      className={`rounded-2xl border bg-white p-3 ring-1 ring-inset ${tones[tone] || tones.neutral}`}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-80">
+          {label}
+        </p>
+        {Icon && <Icon size={14} className="opacity-70" />}
+      </div>
+      <p className="mt-1.5 text-xl font-black tabular-nums">{value}</p>
+    </div>
+  );
+}
+
 function AdminReports() {
   const { adminToken } = useAuth();
   const [startDate, setStartDate] = useState("");
@@ -7092,20 +6087,17 @@ function AdminReports() {
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  // ✅ FIXED: প্যারামিটার গ্রহণ করে stale state এড়ানো
   const buildQuery = (customStart, customEnd, customStatus) => {
     const params = new URLSearchParams();
     const s = customStart !== undefined ? customStart : startDate;
     const e = customEnd !== undefined ? customEnd : endDate;
     const st = customStatus !== undefined ? customStatus : statusFilter;
-
     if (s) params.set("startDate", s);
     if (e) params.set("endDate", e);
     if (st !== "all") params.set("status", st);
     return params.toString();
   };
 
-  // ✅ FIXED: প্যারামিটার গ্রহণ
   const fetchReport = async (customStart, customEnd, customStatus) => {
     setLoading(true);
     setError("");
@@ -7122,21 +6114,17 @@ function AdminReports() {
 
   useEffect(() => {
     fetchReport();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const downloadCsv = async () => {
     setExporting(true);
     try {
       const qs = buildQuery();
-      const url = `${API_BASE}/admin/reports/export${qs ? "?" + qs : ""}`; // ✅ API_BASE
-
+      const url = `${API_BASE}/admin/reports/export${qs ? "?" + qs : ""}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
-
       if (!res.ok) throw new Error("Export failed");
-
       const blob = await res.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -7150,24 +6138,19 @@ function AdminReports() {
     }
   };
 
-  // ✅ FIXED: setTimeout বাদ দিয়ে সরাসরি প্যারামিটার পাস
   const quickRange = (days) => {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - days);
-
     const fmt = (d) => d.toISOString().slice(0, 10);
     const s = fmt(start);
     const e = fmt(end);
-
     setStartDate(s);
     setEndDate(e);
-
-    fetchReport(s, e, statusFilter); // ✅ সরাসরি প্যারামিটার
+    fetchReport(s, e, statusFilter);
   };
 
   const s = data?.summary || {};
-
   const statCards = [
     {
       label: "Total Revenue",
@@ -7209,7 +6192,6 @@ function AdminReports() {
       icon: Truck,
     },
   ];
-
   const orderStats = [
     {
       label: "Total Orders",
@@ -7226,11 +6208,7 @@ function AdminReports() {
       value: s.cancelledOrders || 0,
       color: "text-red-600",
     },
-    {
-      label: "Pending",
-      value: s.pendingOrders || 0,
-      color: "text-amber-600",
-    },
+    { label: "Pending", value: s.pendingOrders || 0, color: "text-amber-600" },
     { label: "Paid", value: s.paidOrders || 0, color: "text-blue-600" },
     {
       label: "Items Sold",
@@ -7253,7 +6231,6 @@ function AdminReports() {
             Profit, loss, waste এবং revenue breakdown — CSV export সহ।
           </p>
         </div>
-
         <button
           type="button"
           onClick={downloadCsv}
@@ -7264,7 +6241,6 @@ function AdminReports() {
           {exporting ? "Exporting..." : "Download CSV"}
         </button>
       </div>
-
       <div className="mb-5 rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
@@ -7278,7 +6254,6 @@ function AdminReports() {
               className="min-h-11 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm outline-none focus:border-orange-500 focus:bg-white"
             />
           </label>
-
           <label className="block">
             <span className="mb-1 block text-xs font-bold text-neutral-600">
               End date
@@ -7290,7 +6265,6 @@ function AdminReports() {
               className="min-h-11 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm outline-none focus:border-orange-500 focus:bg-white"
             />
           </label>
-
           <label className="block">
             <span className="mb-1 block text-xs font-bold text-neutral-600">
               Order status
@@ -7309,7 +6283,6 @@ function AdminReports() {
               <option value="cancelled">Cancelled</option>
             </select>
           </label>
-
           <div className="flex items-end gap-2">
             <button
               type="button"
@@ -7322,7 +6295,6 @@ function AdminReports() {
             </button>
           </div>
         </div>
-
         <div className="mt-3 flex flex-wrap gap-2">
           {[
             { label: "Today", days: 0 },
@@ -7338,7 +6310,7 @@ function AdminReports() {
                 if (q.days === null) {
                   setStartDate("");
                   setEndDate("");
-                  fetchReport("", "", statusFilter); // ✅ সরাসরি প্যারামিটার
+                  fetchReport("", "", statusFilter);
                 } else {
                   quickRange(q.days);
                 }
@@ -7350,13 +6322,11 @@ function AdminReports() {
           ))}
         </div>
       </div>
-
       {error && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
-
       {loading && !data ? (
         <div className="rounded-2xl border border-neutral-200 bg-white">
           <Loader text="Loading report" />
@@ -7388,7 +6358,6 @@ function AdminReports() {
               );
             })}
           </div>
-
           <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {orderStats.map((o) => (
               <div
@@ -7406,7 +6375,6 @@ function AdminReports() {
               </div>
             ))}
           </div>
-
           <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
             <div className="border-b border-neutral-100 px-4 py-3 sm:px-5">
               <h3 className="text-sm font-extrabold text-neutral-900">
@@ -7416,7 +6384,6 @@ function AdminReports() {
                 কোন product কত বিক্রি হয়েছে, কত profit/loss দিয়েছে
               </p>
             </div>
-
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
@@ -7445,9 +6412,7 @@ function AdminReports() {
                         {money(p.cost)}
                       </td>
                       <td
-                        className={`px-4 py-3 text-right font-black tabular-nums ${
-                          p.profit >= 0 ? "text-emerald-600" : "text-red-600"
-                        }`}
+                        className={`px-4 py-3 text-right font-black tabular-nums ${p.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}
                       >
                         {money(p.profit)}
                       </td>
@@ -7476,38 +6441,317 @@ function AdminReports() {
   );
 }
 
-/* Small stat card used in AdminOrders */
-function StatCard({ label, value, tone = "neutral", icon: Icon }) {
-  const tones = {
-    neutral: "bg-neutral-50 text-neutral-900 ring-neutral-200",
-    amber: "bg-amber-50 text-amber-800 ring-amber-200",
-    violet: "bg-violet-50 text-violet-800 ring-violet-200",
-    emerald: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-    red: "bg-red-50 text-red-800 ring-red-200",
-    orange: "bg-orange-50 text-orange-800 ring-orange-200",
+/* Customer Profile */
+function Profile() {
+  const { customer, updateProfile, logoutCustomer } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = customer?.user?.id || customer?.user?._id;
+
+  const [f, setF] = useState({
+    name: customer?.user?.name || "",
+    email: customer?.user?.email || "",
+    phone: customer?.user?.phone || "",
+  });
+
+  useEffect(() => {
+    setF({
+      name: customer?.user?.name || "",
+      email: customer?.user?.email || "",
+      phone: customer?.user?.phone || "",
+    });
+  }, [customer?.user?.name, customer?.user?.email, customer?.user?.phone]);
+
+  const {
+    data: orders = [],
+    isLoading: loadingOrders,
+    error: orderQueryError,
+    refetch: refetchOrders,
+    isFetching: ordersFetching,
+  } = useQuery({
+    queryKey: orderKeys.mine(userId),
+    queryFn: async () => {
+      const data = await apiFetch("/orders/mine");
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!customer?.token && !!userId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
+  });
+
+  const orderError = orderQueryError?.message || "";
+
+  if (!customer?.token) return <Navigate to="/login" replace />;
+
+  async function save(e) {
+    e.preventDefault();
+    try {
+      await updateProfile(f);
+      msg("Profile updated successfully.");
+      await queryClient.invalidateQueries({
+        queryKey: ["orders"],
+        refetchType: "all",
+      });
+    } catch (error) {
+      msg(error.message, "error");
+    }
+  }
+
+  function handleLogout() {
+    queryClient.removeQueries({ queryKey: ["orders"] });
+    logoutCustomer();
+  }
+
+  const statusStyles = {
+    pending: "bg-amber-50 text-amber-700 ring-amber-200",
+    confirmed: "bg-blue-50 text-blue-700 ring-blue-200",
+    processing: "bg-violet-50 text-violet-700 ring-violet-200",
+    shipped: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    delivered: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    cancelled: "bg-red-50 text-red-700 ring-red-200",
+  };
+
+  const paymentLabels = {
+    cod: "Cash on Delivery",
+    bkash: "bKash",
+    nagad: "Nagad",
+    rocket: "Rocket",
   };
 
   return (
-    <div
-      className={`rounded-2xl border bg-white p-3 ring-1 ring-inset ${tones[tone] || tones.neutral}`}
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-80">
-          {label}
-        </p>
-        {Icon && <Icon size={14} className="opacity-70" />}
+    <main className="wrap page tie-account-page">
+      <Heading
+        tag="YOUR ACCOUNT"
+        title="My account."
+        desc="Manage your personal information and track your purchases."
+      />
+      <div className="tie-account-layout">
+        <aside className="tie-account-sidebar">
+          <form className="box stack tie-profile-form" onSubmit={save}>
+            <div className="tie-profile-heading">
+              <div className="tie-profile-avatar">
+                <UserRound size={23} />
+              </div>
+              <div>
+                <h2>Account details</h2>
+                <p>Manage your profile</p>
+              </div>
+            </div>
+            <label>
+              Full name
+              <input
+                type="text"
+                value={f.name}
+                onChange={(e) => setF({ ...f, name: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Email address
+              <input
+                type="email"
+                value={f.email}
+                onChange={(e) => setF({ ...f, email: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Phone number
+              <input
+                type="tel"
+                value={f.phone}
+                onChange={(e) => setF({ ...f, phone: e.target.value })}
+              />
+            </label>
+            <button type="submit" className="btn orange wide">
+              Save changes
+            </button>
+            <button
+              type="button"
+              className="btn outline wide"
+              onClick={handleLogout}
+            >
+              <LogOut size={16} /> Log out
+            </button>
+          </form>
+        </aside>
+        <section className="tie-orders-section">
+          <div className="tie-orders-heading">
+            <div>
+              <span className="eyebrow">YOUR PURCHASES</span>
+              <h2>My orders</h2>
+              <p>Your orders, products and delivery information.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="tie-order-count">
+                {orders.length} {orders.length === 1 ? "order" : "orders"}
+              </span>
+              <button
+                type="button"
+                onClick={() => refetchOrders()}
+                disabled={ordersFetching}
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-60"
+              >
+                <RefreshCw
+                  size={12}
+                  className={ordersFetching ? "animate-spin" : ""}
+                />{" "}
+                Refresh
+              </button>
+            </div>
+          </div>
+          {loadingOrders ? (
+            <Loader text="Loading your orders" />
+          ) : orderError ? (
+            <div className="tie-orders-message">
+              <p className="text-red-600">{orderError}</p>
+              <button
+                type="button"
+                className="btn outline"
+                onClick={() => refetchOrders()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : orders.length === 0 ? (
+            <div className="tie-orders-message">
+              <ShoppingBag size={36} />
+              <h3>No orders yet</h3>
+              <p>
+                Your purchases will appear here after you place an order while
+                logged in.
+              </p>
+              <Link to="/products" className="btn orange">
+                Shop now <ArrowRight size={17} />
+              </Link>
+            </div>
+          ) : (
+            <div className="tie-orders-grid">
+              {orders.map((order) => {
+                const status = String(order.status || "pending").toLowerCase();
+                const zone = order.deliveryZone;
+                return (
+                  <article className="tie-order-card" key={order._id}>
+                    <div className="tie-order-card-header">
+                      <div className="tie-order-number">
+                        <span>ORDER NUMBER</span>
+                        <h3>{order.orderNumber || order._id}</h3>
+                        {order.createdAt && (
+                          <p>
+                            {new Date(order.createdAt).toLocaleDateString(
+                              "en-GB",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`tie-status ${statusStyles[status] || "bg-stone-100 text-stone-700 ring-stone-200"}`}
+                      >
+                        {status.replaceAll("_", " ")}
+                      </span>
+                    </div>
+                    <div className="tie-order-items">
+                      {(order.items || []).map((item, index) => (
+                        <div
+                          className="tie-order-item"
+                          key={`${order._id}-${index}`}
+                        >
+                          <div className="tie-order-image">
+                            <img
+                              src={
+                                item.image ||
+                                "https://placehold.co/300x375?text=Take+It+Easy"
+                              }
+                              alt={item.title || "Ordered product"}
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src =
+                                  "https://placehold.co/300x375?text=Product";
+                              }}
+                            />
+                          </div>
+                          <div className="tie-order-product-info">
+                            <h4>{item.title || "Product"}</h4>
+                            <p>Quantity: {item.quantity || 1}</p>
+                            {item.size && <p>Size: {item.size}</p>}
+                            <span>{money(item.price)} each</span>
+                          </div>
+                          <strong className="tie-item-total">
+                            {money(
+                              Number(item.price || 0) *
+                                Number(item.quantity || 1),
+                            )}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="tie-order-summary">
+                      <div>
+                        <span>Subtotal</span>
+                        <span>{money(order.subtotal)}</span>
+                      </div>
+                      <div>
+                        <span>
+                          Delivery charge
+                          {zone && ZONE_LABELS[zone] ? (
+                            <> · {ZONE_LABELS[zone]}</>
+                          ) : null}
+                        </span>
+                        <span>{money(order.deliveryCharge)}</span>
+                      </div>
+                      <div className="tie-total-row">
+                        <strong>Total</strong>
+                        <strong>{money(order.total)}</strong>
+                      </div>
+                    </div>
+                    <div className="tie-order-bottom">
+                      <div className="tie-payment">
+                        <span>PAYMENT METHOD</span>
+                        <strong>
+                          {paymentLabels[order.paymentMethod] ||
+                            order.paymentMethod ||
+                            "Not specified"}
+                        </strong>
+                      </div>
+                      <Link
+                        className="tie-track-button"
+                        to={`/track-order?order=${encodeURIComponent(order.orderNumber || "")}&phone=${encodeURIComponent(order.phone || "")}`}
+                      >
+                        Track order <ArrowRight size={15} />
+                      </Link>
+                    </div>
+                    {(order.address || order.city) && (
+                      <div className="tie-delivery-address">
+                        <span>DELIVERY ADDRESS</span>
+                        <p>
+                          {order.address}
+                          {order.city ? `, ${order.city}` : ""}
+                        </p>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
-      <p className="mt-1.5 text-xl font-black tabular-nums">{value}</p>
-    </div>
+    </main>
   );
 }
 
-/* 404 Page */
 function NotFound() {
   return (
     <main className="wrap page">
       <Heading tag="404" title="Page not found." />
-
       <Link className="btn orange" to="/">
         Back home
       </Link>
@@ -7518,7 +6762,6 @@ function NotFound() {
 /* Main App */
 export default function App() {
   const cart = useCart();
-
   return (
     <C.Provider value={cart}>
       <FontSetup />
@@ -7531,16 +6774,13 @@ export default function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/track-order" element={<Track />} />
-
           <Route path="/contact" element={<Contact />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/page/:slug" element={<DynamicPage />} />
         </Route>
-
         <Route path="/admin/login" element={<AdminLogin />} />
-
         <Route element={<AdminGuard />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
@@ -7554,16 +6794,13 @@ export default function App() {
             <Route path="pages" element={<AdminPages />} />
           </Route>
         </Route>
-
         <Route path="*" element={<NotFound />} />
       </Routes>
     </C.Provider>
   );
 }
 
-/* Admin Route Protection */
 function AdminGuard() {
   const { adminToken } = useAuth();
-
   return adminToken ? <Outlet /> : <Navigate to="/admin/login" replace />;
 }
