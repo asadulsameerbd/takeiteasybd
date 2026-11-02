@@ -53,7 +53,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import "./styles-admin-update.css";
+import "./styles.css";
 import MetaPixel from "./MetaPixel";
 import pixel from "./lib/pixel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
