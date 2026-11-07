@@ -568,7 +568,12 @@ function Card({ p, add }) {
         ) : (
           hasSale && (
             <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-orange-600 px-2 py-1 text-[9px] font-extrabold leading-tight text-white shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-[10px] sm:tracking-wide">
-              Sale · {discount.percent}% off
+              Save ৳
+              {Math.max(
+                0,
+                discount.original - Number(p.price || 0),
+              ).toLocaleString("en-BD")}{" "}
+              Tk
             </span>
           )
         )}
@@ -1391,7 +1396,25 @@ function Product() {
                 </div>
               )}
             </div>
-
+            {/* Product Details - Image Pagination */}
+            {images.length > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-2">
+                {images.map((_, i) => (
+                  <button
+                    key={`pagination-${i}`}
+                    type="button"
+                    onClick={() => setActiveImage(i)}
+                    aria-label={`Go to product image ${i + 1}`}
+                    aria-current={selectedImage === i ? "true" : undefined}
+                    className={`h-2 rounded-full transition-all duration-300 ease-in-out ${
+                      selectedImage === i
+                        ? "w-8 bg-orange-500"
+                        : "w-2 bg-neutral-300 hover:bg-orange-400"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
             <div className="mt-3 flex gap-2.5 overflow-x-auto pb-2 sm:mt-4 sm:gap-3">
               {images.map((src, i) => (
                 <button
