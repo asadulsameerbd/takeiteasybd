@@ -1,193 +1,244 @@
-// src/lib/pixel.js
-
-const PIXEL_ID = "2346615959428743";
-
-/**
- * Safe fbq wrapper — pixel load না হলেও crash করবে না
- */
+// Safe Meta Pixel wrapper
 function fbq(...args) {
   if (typeof window === "undefined") return;
   if (!window.fbq) return;
   if (!window.__takeItEasyNewPixelInitialized) return;
+
   try {
     window.fbq(...args);
-  } catch (e) {
-    // silently ignore pixel errors
+  } catch (error) {
+    console.error("Meta Pixel Error:", error);
   }
 }
 
-/**
- * Format items for Meta content arrays
- */
+// Get product ID from different possible object structures
+function getProductId(item = {}) {
+  return String(
+    item.productId ||
+      item._id ||
+      item.id ||
+      item.product?._id ||
+      item.product?.id ||
+      "",
+  );
+}
+
+// Safely convert number
+function toNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+// Get item price
+function getItemPrice(item = {}) {
+  return toNumber(item.price ?? item.product?.price ?? item.item_price ?? 0);
+}
+
+// Get item title
+function getItemTitle(item = {}) {
+  return (
+    item.title || item.name || item.product?.title || item.product?.name || ""
+  );
+}
+
+// Get item quantity
+function getItemQuantity(item = {}) {
+  return Math.max(1, toNumber(item.quantity, 1));
+}
+
+// Format cart items for Meta
 function formatContents(items = []) {
-  return items.map((i) => ({
-    id: String(i.productId || i._id || i.id || ""),
-    quantity: Number(i.quantity || 1),
-    item_price: Number(i.price || 0),
-    title: i.title || i.name || "",
-  }));
+  return items
+    .map((item) => ({
+      id: getProductId(item),
+      quantity: getItemQuantity(item),
+      item_price: getItemPrice(item),
+      title: getItemTitle(item),
+    }))
+    .filter((item) => item.id);
 }
 
+// Format product IDs
 function formatIds(items = []) {
-  return items.map((i) => String(i.productId || i._id || i.id || ""));
+  return items.map(getProductId).filter(Boolean);
 }
 
-/* ============================================================ */
-/* Core Events                                                  */
-/* ============================================================ */
+// Calculate total quantity
+function getTotalItems(items = []) {
+  return items.reduce((total, item) => total + getItemQuantity(item), 0);
+}
 
+// Core Pixel Events
 export const pixel = {
-  /* PageView — handled inside MetaPixel component */
+  // PageView is handled by MetaPixel.jsx
 
-  /**
-   * ViewContent — user product page দেখলে
-   */
+  // ViewContent
   viewContent(product) {
     if (!product) return;
+
+    const id = getProductId(product);
+    if (!id) return;
+
     fbq("track", "ViewContent", {
-      content_ids: [String(product._id)],
-      content_name: product.title,
+      content_ids: [id],
+      content_name: getItemTitle(product),
       content_type: "product",
       content_category: product.category || "",
-      value: Number(product.price) || 0,
+      value: getItemPrice(product),
       currency: "BDT",
     });
   },
 
-  /**
-   * AddToCart — cart-এ কিছু যোগ হলে
-   */
+  // AddToCart
   addToCart(product, quantity = 1, size = "") {
     if (!product) return;
+
+    const id = getProductId(product);
+    if (!id) return;
+
+    const qty = Math.max(1, toNumber(quantity, 1));
+    const price = getItemPrice(product);
+
     fbq("track", "AddToCart", {
-      content_ids: [String(product._id)],
-      content_name: product.title,
+      content_ids: [id],
+      content_name: getItemTitle(product),
       content_type: "product",
       contents: [
         {
-          id: String(product._id),
-          quantity: Number(quantity),
-          item_price: Number(product.price),
-          title: product.title,
+          id,
+          quantity: qty,
+          item_price: price,
         },
       ],
-      value: Number(product.price) * Number(quantity),
+      value: price * qty,
       currency: "BDT",
+      ...(size ? { size: String(size) } : {}),
     });
   },
 
-  /**
-   * RemoveFromCart — cart থেকে remove হলে
-   */
+  // RemoveFromCart (Custom Event)
   removeFromCart(item) {
     if (!item) return;
-    fbq("track", "RemoveFromCart", {
-      content_ids: [String(item.productId)],
+
+    const id = getProductId(item);
+    if (!id) return;
+
+    const quantity = getItemQuantity(item);
+    const price = getItemPrice(item);
+
+    fbq("trackCustom", "RemoveFromCart", {
+      content_ids: [id],
       content_type: "product",
       contents: [
         {
-          id: String(item.productId),
-          quantity: Number(item.quantity || 1),
-          item_price: Number(item.price || 0),
+          id,
+          quantity,
+          item_price: price,
         },
       ],
-      value: Number(item.price || 0) * Number(item.quantity || 1),
+      value: price * quantity,
       currency: "BDT",
     });
   },
 
-  /**
-   * InitiateCheckout — checkout page-এ ঢুকলে
-   */
+  // InitiateCheckout
   initiateCheckout(cart = [], total = 0, numItems = 0) {
     if (!cart.length) return;
+
+    const contents = formatContents(cart);
+    const ids = formatIds(cart);
+
+    if (!ids.length) return;
+
     fbq("track", "InitiateCheckout", {
-      content_ids: formatIds(cart),
-      contents: formatContents(cart),
+      content_ids: ids,
+      contents,
       content_type: "product",
-      num_items: Number(numItems),
-      value: Number(total),
+      num_items: toNumber(numItems) || getTotalItems(cart),
+      value: toNumber(total),
       currency: "BDT",
     });
   },
 
-  /**
-   * AddPaymentInfo — payment method select করলে
-   */
+  // AddPaymentInfo
   addPaymentInfo(cart = [], total = 0, numItems = 0, paymentMethod = "") {
     if (!cart.length) return;
+
+    const contents = formatContents(cart);
+    const ids = formatIds(cart);
+
+    if (!ids.length) return;
+
     fbq("track", "AddPaymentInfo", {
-      content_ids: formatIds(cart),
-      contents: formatContents(cart),
+      content_ids: ids,
+      contents,
       content_type: "product",
-      num_items: Number(numItems),
-      value: Number(total),
+      num_items: toNumber(numItems) || getTotalItems(cart),
+      value: toNumber(total),
       currency: "BDT",
+      ...(paymentMethod ? { payment_method: String(paymentMethod) } : {}),
     });
   },
 
-  /**
-   * Purchase — order সফলভাবে place হলে (সবচেয়ে গুরুত্বপূর্ণ!)
-   */
-  purchase({ cart = [], total = 0, numItems = 0, orderId = "" }) {
+  // Purchase - Call only after successful order creation
+  purchase({ cart = [], total = 0, numItems = 0, orderId = "" } = {}) {
     if (!cart.length) return;
+
+    const contents = formatContents(cart);
+    const ids = formatIds(cart);
+
+    if (!ids.length) return;
+
     fbq("track", "Purchase", {
-      content_ids: formatIds(cart),
-      contents: formatContents(cart),
+      content_ids: ids,
+      contents,
       content_type: "product",
-      num_items: Number(numItems),
-      value: Number(total),
+      num_items: toNumber(numItems) || getTotalItems(cart),
+      value: toNumber(total),
       currency: "BDT",
-      order_id: String(orderId || ""),
+      ...(orderId ? { order_id: String(orderId) } : {}),
     });
   },
 
-  /**
-   * Search — products search করলে
-   */
+  // Search
   search(searchString) {
-    if (!searchString || !searchString.trim()) return;
+    if (!searchString || !String(searchString).trim()) return;
+
     fbq("track", "Search", {
       search_string: String(searchString).trim(),
       content_type: "product",
     });
   },
 
-  /**
-   * ViewCategory — category filter করলে
-   */
+  // ViewCategory (Custom Event)
   viewCategory(categoryName) {
     if (!categoryName || categoryName === "All") return;
-    fbq("track", "ViewContent", {
+
+    fbq("trackCustom", "ViewCategory", {
       content_name: String(categoryName),
       content_type: "product_group",
       content_category: String(categoryName),
     });
   },
 
-  /**
-   * Lead — contact form / WhatsApp click
-   */
+  // Lead
   lead(source = "") {
     fbq("track", "Lead", {
       content_name: source || "contact",
     });
   },
 
-  /**
-   * CompleteRegistration — নতুন account তৈরি হলে
-   */
+  // CompleteRegistration
   completeRegistration() {
     fbq("track", "CompleteRegistration", {
       status: true,
     });
   },
 
-  /**
-   * Custom event — যেকোনো custom track করতে
-   */
+  // Custom Event
   custom(eventName, params = {}) {
     if (!eventName) return;
+
     fbq("trackCustom", String(eventName), params);
   },
 };
