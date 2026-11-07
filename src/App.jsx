@@ -63,6 +63,7 @@ import { useAuth } from "./context/AuthContext";
 import { broadcastOrderChange, orderChannel } from "./lib/orderChannel";
 import logo from "./assets/logo.jpeg";
 import logobgl from "./assets/logobgl.png";
+const favicon = "/favicon.png";
 
 import bkashLogo from "./assets/bkash.png";
 import nagadLogo from "./assets/nagad.svg";
