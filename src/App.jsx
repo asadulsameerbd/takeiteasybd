@@ -437,7 +437,7 @@ function Footer() {
               className="inline-flex items-center"
             >
               <img
-                src={logobgl}
+                src={favicon}
                 alt="Take It Easy Logo"
                 className="block h-auto w-[80px] object-contain sm:w-[90px]"
               />
